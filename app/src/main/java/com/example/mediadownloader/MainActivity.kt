@@ -65,8 +65,19 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIncomingIntent(intent: Intent?) {
         if (intent == null) return
-        if (intent.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
-            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+        val sharedText = when (intent.action) {
+            Intent.ACTION_SEND -> {
+                intent.getStringExtra(Intent.EXTRA_TEXT)
+                    ?: intent.getStringExtra(Intent.EXTRA_SUBJECT)
+                    ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
+                    ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri?.toString()
+            }
+            Intent.ACTION_VIEW -> {
+                intent.dataString
+            }
+            else -> null
+        }
+        if (!sharedText.isNullOrBlank()) {
             viewModel.handleSharedText(sharedText)
         }
     }

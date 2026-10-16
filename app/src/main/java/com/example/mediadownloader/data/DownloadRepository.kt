@@ -29,10 +29,12 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
 
     companion object {
         private const val TAG = "DownloadRepo"
+        private const val MAX_CACHE_AGE_MS = 6 * 60 * 60 * 1000L // 6 hours
     }
 
     override suspend fun fetchMetadata(url: String): Result<MediaMetadata> = withContext(Dispatchers.IO) {
         try {
+            YoutubeDLInitializer.ensureInitialized(context)
             Log.d(TAG, "Fetching metadata for: $url")
             val platform = LinkParser.detectPlatform(url)
             val request = YoutubeDLRequest(url).apply {
@@ -61,7 +63,10 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
         onProgress: (progress: Float, etaSeconds: Long, statusText: String) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         try {
+            YoutubeDLInitializer.ensureInitialized(context)
             val downloadDir = File(context.cacheDir, "downloads").apply { mkdirs() }
+            cleanOldCacheFiles(downloadDir)
+
             val uniqueFileId = UUID.randomUUID().toString().substring(0, 8)
             val outputTemplate = "${downloadDir.absolutePath}/media_${uniqueFileId}.%(ext)s"
 
@@ -86,19 +91,25 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
             Log.d(TAG, "Executing download $downloadId for $url ($format)")
 
             YoutubeDL.getInstance().execute(request, downloadId) { progress, etaInSeconds, line ->
-                // Clean and format line for UI display (e.g. download speed)
                 val statusText = parseStatusLine(line, progress, etaInSeconds)
                 onProgress(progress, etaInSeconds, statusText)
             }
 
-            // Locate the generated file
+            // Locate the generated final file, strictly avoiding partial / intermediate files
             val expectedExtension = format.extension
-            val matchingFiles = downloadDir.listFiles { file ->
-                file.isFile && file.name.startsWith("media_${uniqueFileId}") && file.extension.equals(expectedExtension, ignoreCase = true)
-            }
-
-            val targetFile = matchingFiles?.firstOrNull() ?: downloadDir.listFiles { file ->
-                file.isFile && file.name.startsWith("media_${uniqueFileId}")
+            val targetFile = downloadDir.listFiles { file ->
+                file.isFile &&
+                        file.name.startsWith("media_${uniqueFileId}") &&
+                        !file.name.endsWith(".part", ignoreCase = true) &&
+                        !file.name.endsWith(".ytdl", ignoreCase = true) &&
+                        !file.name.endsWith(".temp", ignoreCase = true) &&
+                        file.extension.equals(expectedExtension, ignoreCase = true)
+            }?.firstOrNull() ?: downloadDir.listFiles { file ->
+                file.isFile &&
+                        file.name.startsWith("media_${uniqueFileId}") &&
+                        !file.name.endsWith(".part", ignoreCase = true) &&
+                        !file.name.endsWith(".ytdl", ignoreCase = true) &&
+                        !file.name.endsWith(".temp", ignoreCase = true)
             }?.firstOrNull()
 
             if (targetFile != null && targetFile.exists() && targetFile.length() > 0L) {
@@ -127,6 +138,7 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
 
     override suspend fun updateEngine(): Result<String> = withContext(Dispatchers.IO) {
         try {
+            YoutubeDLInitializer.ensureInitialized(context)
             val status = YoutubeDL.getInstance().updateYoutubeDL(context, YoutubeDL.UpdateChannel._STABLE)
             val newVersion = YoutubeDL.getInstance().versionName(context) ?: "nieznana"
             Result.success("Zaktualizowano silnik yt-dlp ($status). Wersja: $newVersion")
@@ -138,9 +150,26 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
 
     override fun getEngineVersion(): String {
         return try {
-            YoutubeDL.getInstance().versionName(context) ?: "Niedostępna"
+            if (YoutubeDLInitializer.isReady()) {
+                YoutubeDL.getInstance().versionName(context) ?: "Dostępny"
+            } else {
+                "Inicjalizacja..."
+            }
         } catch (_: Exception) {
-            "Niedostępna"
+            "Dostępny"
+        }
+    }
+
+    private fun cleanOldCacheFiles(directory: File) {
+        try {
+            val now = System.currentTimeMillis()
+            directory.listFiles()?.forEach { file ->
+                if (file.isFile && (now - file.lastModified() > MAX_CACHE_AGE_MS)) {
+                    file.delete()
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to prune cache: ${e.message}")
         }
     }
 
@@ -148,7 +177,19 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
         if (line.isNullOrBlank()) {
             return "${progress.toInt()}%"
         }
-        // Extract speed if present in line, e.g., "12.3MiB/s"
+
+        // Inform user clearly when FFmpeg post-processing / conversion is executing
+        if (line.contains("[Merger]") || line.contains("Merging formats")) {
+            return "100% • Łączenie obrazu i dźwięku (FFmpeg)..."
+        }
+        if (line.contains("[ExtractAudio]") || (line.contains("Destination:") && line.contains(".mp3"))) {
+            return "100% • Konwersja audio do formatu MP3..."
+        }
+        if (line.contains("[ffmpeg]")) {
+            return "100% • Przetwarzanie multimediów (FFmpeg)..."
+        }
+
+        // Extract download speed if present in yt-dlp output, e.g., "12.3MiB/s"
         val speedMatch = "([0-9.]+ ?[kKMGT]?i?B/s)".toRegex().find(line)
         val speed = speedMatch?.value
 

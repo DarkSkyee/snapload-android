@@ -39,6 +39,18 @@ class LinkParserTest {
     }
 
     @Test
+    fun extractUrl_fromParenthesizedUrl() {
+        val sharedText = "Check this out (https://youtube.com/shorts/dQw4w9WgXcQ)"
+        assertEquals("https://youtube.com/shorts/dQw4w9WgXcQ", LinkParser.extractUrl(sharedText))
+    }
+
+    @Test
+    fun extractUrl_fromQuotedUrl() {
+        val sharedText = "Watch: \"https://vm.tiktok.com/ZMxxxxxx/\""
+        assertEquals("https://vm.tiktok.com/ZMxxxxxx/", LinkParser.extractUrl(sharedText))
+    }
+
+    @Test
     fun detectPlatform_youtubeVariants() {
         assertEquals(LinkParser.Platform.YOUTUBE, LinkParser.detectPlatform("https://www.youtube.com/watch?v=123"))
         assertEquals(LinkParser.Platform.YOUTUBE, LinkParser.detectPlatform("https://youtu.be/123"))

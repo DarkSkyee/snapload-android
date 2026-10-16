@@ -5,8 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import android.util.Log
-import com.yausername.ffmpeg.FFmpeg
-import com.yausername.youtubedl_android.YoutubeDL
+import com.example.mediadownloader.data.YoutubeDLInitializer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -23,17 +22,9 @@ class DownloaderApplication : Application() {
         super.onCreate()
         createNotificationChannel()
 
-        // Initialize YoutubeDL and FFmpeg asynchronously on startup
+        // Warm up YoutubeDL and FFmpeg in the background on startup
         CoroutineScope(Dispatchers.IO).launch {
-            try {
-                Log.d(TAG, "Initializing YoutubeDL and FFmpeg...")
-                YoutubeDL.getInstance().init(applicationContext)
-                FFmpeg.getInstance().init(applicationContext)
-                val version = YoutubeDL.getInstance().versionName(applicationContext)
-                Log.i(TAG, "YoutubeDL initialized successfully with version: $version")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to initialize YoutubeDL / FFmpeg: ${e.message}", e)
-            }
+            YoutubeDLInitializer.ensureInitialized(applicationContext)
         }
     }
 

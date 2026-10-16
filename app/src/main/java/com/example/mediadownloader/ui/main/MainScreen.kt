@@ -225,13 +225,10 @@ fun MainScreen(
                         state = downloadState,
                         onCancel = { viewModel.cancelDownload(context) },
                         onReset = { viewModel.resetDownloadState() },
-                        onOpen = { uri ->
+                        onOpen = { uri, mimeType ->
                             try {
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(
-                                        uri,
-                                        if (uri.toString().contains("video") || uri.toString().endsWith("mp4")) "video/*" else "audio/*"
-                                    )
+                                    setDataAndType(uri, mimeType)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
                                 context.startActivity(intent)
@@ -533,7 +530,7 @@ fun DownloadStatusCard(
     state: DownloadUiState,
     onCancel: () -> Unit,
     onReset: () -> Unit,
-    onOpen: (Uri) -> Unit
+    onOpen: (Uri, String) -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(18.dp),
@@ -643,7 +640,7 @@ fun DownloadStatusCard(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Button(
-                        onClick = { onOpen(state.uri) },
+                        onClick = { onOpen(state.uri, state.format.mimeType) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)
                     ) {

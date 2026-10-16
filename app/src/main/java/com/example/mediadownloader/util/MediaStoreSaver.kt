@@ -37,44 +37,56 @@ object MediaStoreSaver {
 
         val cleanTitle = sanitizeFileName(title)
         val fileName = "$cleanTitle.${format.extension}"
-        val resolver = context.contentResolver
 
-        val (collection, relativePath, mimeType) = when (format) {
-            DownloadFormat.MP4 -> {
-                val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                } else {
-                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                }
-                Triple(collection, "${Environment.DIRECTORY_MOVIES}/Downloader", format.mimeType)
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                saveViaMediaStoreModern(context, tempFile, fileName, format)
+            } else {
+                saveViaPublicDirectoryLegacy(context, tempFile, cleanTitle, fileName, format)
             }
-            DownloadFormat.MP3 -> {
-                val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-                } else {
-                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving to MediaStore / Gallery: ${e.message}", e)
+            null
+        } finally {
+            // Clean up temporary cache file
+            try {
+                if (tempFile.exists()) {
+                    tempFile.delete()
                 }
-                Triple(collection, "${Environment.DIRECTORY_MUSIC}/Downloader", format.mimeType)
+            } catch (delEx: Exception) {
+                Log.w(TAG, "Failed to delete temporary file: ${delEx.message}")
             }
+        }
+    }
+
+    private fun saveViaMediaStoreModern(
+        context: Context,
+        tempFile: File,
+        fileName: String,
+        format: DownloadFormat
+    ): Uri? {
+        val resolver = context.contentResolver
+        val (collection, relativePath) = when (format) {
+            DownloadFormat.MP4 -> Pair(
+                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
+                "${Environment.DIRECTORY_MOVIES}/Downloader"
+            )
+            DownloadFormat.MP3 -> Pair(
+                MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
+                "${Environment.DIRECTORY_MUSIC}/Downloader"
+            )
         }
 
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
-            }
+            put(MediaStore.MediaColumns.MIME_TYPE, format.mimeType)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
 
-        var itemUri: Uri? = null
-        try {
-            itemUri = resolver.insert(collection, contentValues)
-            if (itemUri == null) {
-                Log.e(TAG, "Failed to insert MediaStore item for $fileName")
-                return null
-            }
+        val itemUri = resolver.insert(collection, contentValues) ?: return null
 
+        try {
             resolver.openOutputStream(itemUri)?.use { outputStream ->
                 FileInputStream(tempFile).use { inputStream ->
                     inputStream.copyTo(outputStream)
@@ -86,37 +98,58 @@ object MediaStoreSaver {
                 return null
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentValues.clear()
-                contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                resolver.update(itemUri, contentValues, null, null)
-            }
+            // Publish the file to MediaStore and Gallery
+            contentValues.clear()
+            contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            resolver.update(itemUri, contentValues, null, null)
 
-            // Also trigger media scanner to ensure instant indexing by system gallery
-            try {
-                MediaScannerConnection.scanFile(
-                    context,
-                    arrayOf(tempFile.absolutePath),
-                    arrayOf(mimeType),
-                    null
-                )
-            } catch (scanEx: Exception) {
-                Log.w(TAG, "Scan failed (harmless on modern Android): ${scanEx.message}")
-            }
-
-            // Delete temporary cache file to free space
-            tempFile.delete()
             Log.i(TAG, "Successfully saved $fileName to gallery: $itemUri")
             return itemUri
-
         } catch (e: Exception) {
-            Log.e(TAG, "Error saving to MediaStore: ${e.message}", e)
-            itemUri?.let { uri ->
-                try {
-                    resolver.delete(uri, null, null)
-                } catch (_: Exception) {}
-            }
-            return null
+            resolver.delete(itemUri, null, null)
+            throw e
         }
+    }
+
+    private fun saveViaPublicDirectoryLegacy(
+        context: Context,
+        tempFile: File,
+        cleanTitle: String,
+        fileName: String,
+        format: DownloadFormat
+    ): Uri? {
+        val publicDirType = if (format == DownloadFormat.MP4) {
+            Environment.DIRECTORY_MOVIES
+        } else {
+            Environment.DIRECTORY_MUSIC
+        }
+        val targetDir = File(Environment.getExternalStoragePublicDirectory(publicDirType), "Downloader").apply {
+            mkdirs()
+        }
+
+        var destFile = File(targetDir, fileName)
+        if (destFile.exists()) {
+            destFile = File(targetDir, "${cleanTitle}_${System.currentTimeMillis()}.${format.extension}")
+        }
+
+        tempFile.copyTo(destFile, overwrite = true)
+
+        // Scan the actual destination file so it appears immediately in the gallery
+        var finalUri: Uri? = null
+        try {
+            MediaScannerConnection.scanFile(
+                context,
+                arrayOf(destFile.absolutePath),
+                arrayOf(format.mimeType)
+            ) { _, uri ->
+                if (uri != null) {
+                    finalUri = uri
+                }
+            }
+        } catch (scanEx: Exception) {
+            Log.w(TAG, "MediaScanner exception: ${scanEx.message}")
+        }
+
+        return finalUri ?: Uri.fromFile(destFile)
     }
 }
