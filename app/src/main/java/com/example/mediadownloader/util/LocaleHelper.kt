@@ -35,4 +35,41 @@ object LocaleHelper {
         }
         return config
     }
+
+    fun applyLanguage(context: Context, languageCode: String): Context {
+        val targetLocale = Locale.forLanguageTag(languageCode)
+        Locale.setDefault(targetLocale)
+
+        val res = context.resources
+        val config = Configuration(res.configuration)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            config.setLocales(LocaleList(targetLocale))
+        } else {
+            @Suppress("DEPRECATION")
+            config.locale = targetLocale
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try {
+                val localeManager = context.getSystemService(android.app.LocaleManager::class.java)
+                localeManager?.applicationLocales = LocaleList.forLanguageTags(languageCode)
+            } catch (_: Exception) {}
+        }
+
+        @Suppress("DEPRECATION")
+        res.updateConfiguration(config, res.displayMetrics)
+
+        return context.createConfigurationContext(config)
+    }
+
+    fun updateConfigurationLocale(config: Configuration, languageCode: String) {
+        val targetLocale = Locale.forLanguageTag(languageCode)
+        Locale.setDefault(targetLocale)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            config.setLocales(LocaleList(targetLocale))
+        } else {
+            @Suppress("DEPRECATION")
+            config.locale = targetLocale
+        }
+    }
 }

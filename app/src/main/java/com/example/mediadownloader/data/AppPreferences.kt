@@ -54,7 +54,10 @@ class AppPreferences(context: Context) {
         }
 
     private fun getLanguageInternal(): String {
-        return prefs.getString(KEY_LANGUAGE, "en") ?: "en"
+        val saved = prefs.getString(KEY_LANGUAGE, null)
+        if (saved != null) return saved
+        val sysLang = java.util.Locale.getDefault().language.lowercase()
+        return if (sysLang.startsWith("pl")) "pl" else "en"
     }
 
     private fun getAutoUpdateEngineInternal(): Boolean {
