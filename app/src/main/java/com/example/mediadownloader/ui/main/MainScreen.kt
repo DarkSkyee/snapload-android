@@ -9,7 +9,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,7 +23,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -36,16 +34,14 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -58,26 +54,39 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import com.example.mediadownloader.model.DownloadFormat
+import com.example.mediadownloader.R
+import com.example.mediadownloader.model.DownloadConfiguration
 import com.example.mediadownloader.model.DownloadUiState
 import com.example.mediadownloader.model.DownloadedItem
 import com.example.mediadownloader.model.MediaMetadata
+import com.example.mediadownloader.model.MediaType
+import com.example.mediadownloader.ui.components.AppBrandHeader
+import com.example.mediadownloader.ui.components.AppMenuBottomSheet
+import com.example.mediadownloader.ui.components.BouncyButton
+import com.example.mediadownloader.ui.components.MediaConfigSelector
 import com.example.mediadownloader.util.LinkParser
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,6 +97,10 @@ fun MainScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    var showSettingsSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     LaunchedEffect(uiState.engineUpdateMessage) {
         uiState.engineUpdateMessage?.let { msg ->
@@ -96,36 +109,50 @@ fun MainScreen(
         }
     }
 
+    LaunchedEffect(uiState.appUpdateMessage) {
+        uiState.appUpdateMessage?.let { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            viewModel.clearAppUpdateMessage()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            text = "Media Downloader",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        Text(
-                            text = "YouTube Shorts & TikTok • 100% On-Device",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    AppBrandHeader(
+                        tagline = stringResource(R.string.app_tagline),
+                        iconSize = 36.dp
+                    )
                 },
                 actions = {
-                    IconButton(
-                        onClick = { viewModel.updateEngine() },
-                        enabled = !uiState.isUpdatingEngine
+                    // Quick language toggle
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                val nextLang = if (uiState.currentLanguage == "en") "pl" else "en"
+                                viewModel.setLanguage(nextLang)
+                            }
                     ) {
-                        if (uiState.isUpdatingEngine) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Aktualizuj silnik yt-dlp"
-                            )
-                        }
+                        Text(
+                            text = if (uiState.currentLanguage == "en") "🇬🇧 EN" else "🇵🇱 PL",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    IconButton(onClick = { showSettingsSheet = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = stringResource(R.string.settings_title),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -174,22 +201,36 @@ fun MainScreen(
                 }
             }
 
-            // 3. Format Selector (MP4 vs MP3)
+            // 3. Format & Quality Configurator (Material 3 Expressive)
             item {
-                FormatSelectorCard(
-                    selectedFormat = uiState.selectedFormat,
-                    onFormatSelected = { viewModel.onFormatSelected(it) }
+                MediaConfigSelector(
+                    config = uiState.downloadConfig,
+                    onConfigChange = { viewModel.onConfigChanged(it) }
                 )
             }
 
-            // 4. Download Action Button
+            // 4. Download Action Button with Bouncy Micro-interaction
             item {
                 val isDownloading = downloadState is DownloadUiState.Downloading ||
                         downloadState is DownloadUiState.Processing ||
                         downloadState is DownloadUiState.SavingToGallery
                 val isUrlValid = LinkParser.isSupported(uiState.urlInput)
 
-                Button(
+                val buttonLabel = if (uiState.downloadConfig.mediaType == MediaType.VIDEO) {
+                    stringResource(
+                        R.string.download_video_btn,
+                        uiState.downloadConfig.formatDisplayName,
+                        uiState.downloadConfig.qualityDisplayName
+                    )
+                } else {
+                    stringResource(
+                        R.string.download_audio_btn,
+                        uiState.downloadConfig.formatDisplayName,
+                        uiState.downloadConfig.qualityDisplayName
+                    )
+                }
+
+                BouncyButton(
                     onClick = { viewModel.startDownload(context) },
                     enabled = isUrlValid && !isDownloading,
                     modifier = Modifier
@@ -203,13 +244,13 @@ fun MainScreen(
                     Icon(
                         imageVector = Icons.Default.Download,
                         contentDescription = null,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = if (uiState.selectedFormat == DownloadFormat.MP4) "POBIERZ WIDEO (MP4) DO GALERII" else "POBIERZ AUDIO (MP3) DO MUZYKI",
+                        text = buttonLabel,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
+                        fontSize = 14.sp
                     )
                 }
             }
@@ -233,7 +274,11 @@ fun MainScreen(
                                 }
                                 context.startActivity(intent)
                             } catch (e: Exception) {
-                                Toast.makeText(context, "Plik zapisany w galerii systemowej", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.open_file_prompt),
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         }
                     )
@@ -244,7 +289,7 @@ fun MainScreen(
             if (uiState.recentDownloads.isNotEmpty()) {
                 item {
                     Text(
-                        text = "Ostatnio pobrane w tej sesji",
+                        text = stringResource(R.string.recent_downloads_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(top = 8.dp)
@@ -258,15 +303,16 @@ fun MainScreen(
                             try {
                                 val uri = Uri.parse(item.uriString)
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(
-                                        uri,
-                                        if (item.format == DownloadFormat.MP4) "video/*" else "audio/*"
-                                    )
+                                    setDataAndType(uri, item.config.mimeType)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
                                 context.startActivity(intent)
                             } catch (e: Exception) {
-                                Toast.makeText(context, "Sprawdź plik w aplikacji Galeria / Muzyka", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.open_file_prompt),
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         }
                     )
@@ -275,6 +321,114 @@ fun MainScreen(
 
             item { Spacer(modifier = Modifier.height(24.dp)) }
         }
+    }
+
+    // Settings ModalBottomSheet
+    if (showSettingsSheet) {
+        AppMenuBottomSheet(
+            sheetState = sheetState,
+            currentLanguage = uiState.currentLanguage,
+            autoUpdateEngine = uiState.autoUpdateEngine,
+            autoUpdateApp = uiState.autoUpdateApp,
+            engineVersion = uiState.engineVersion,
+            appVersion = uiState.appVersion,
+            isUpdatingEngine = uiState.isUpdatingEngine,
+            isCheckingAppUpdate = uiState.isCheckingAppUpdate,
+            onLanguageChange = { lang ->
+                viewModel.setLanguage(lang)
+            },
+            onAutoUpdateEngineChange = { viewModel.setAutoUpdateEngine(it) },
+            onAutoUpdateAppChange = { viewModel.setAutoUpdateApp(it) },
+            onCheckAppUpdateClick = { viewModel.checkForAppUpdates(manual = true) },
+            onUpdateEngineClick = { viewModel.updateEngine() },
+            onDismissRequest = {
+                coroutineScope.launch {
+                    sheetState.hide()
+                    showSettingsSheet = false
+                }
+            }
+        )
+    }
+
+    // App Update Dialog
+    uiState.availableRelease?.let { release ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissUpdateDialog() },
+            title = {
+                Text(
+                    text = stringResource(R.string.update_dialog_title),
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = stringResource(R.string.update_dialog_version, release.versionName),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.update_dialog_notes),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = release.releaseNotes,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 6,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    if (uiState.isDownloadingAppUpdate) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = stringResource(R.string.update_downloading, uiState.appUpdateProgress),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { uiState.appUpdateProgress / 100f },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                val hasApk = !release.apkDownloadUrl.isNullOrBlank()
+                Button(
+                    onClick = {
+                        if (hasApk) {
+                            viewModel.downloadAndInstallUpdate(release)
+                        } else {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(release.htmlUrl))
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        }
+                    },
+                    enabled = !uiState.isDownloadingAppUpdate
+                ) {
+                    Text(
+                        stringResource(
+                            if (hasApk) R.string.update_dialog_button_install else R.string.update_dialog_button_view_github
+                        )
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.dismissUpdateDialog() },
+                    enabled = !uiState.isDownloadingAppUpdate
+                ) {
+                    Text(stringResource(R.string.update_dialog_button_later))
+                }
+            }
+        )
     }
 }
 
@@ -295,15 +449,15 @@ fun UrlInputCard(
                 value = url,
                 onValueChange = onUrlChange,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Wklej link YouTube / TikTok") },
-                placeholder = { Text("https://youtube.com/shorts/... lub TikTok") },
+                label = { Text(stringResource(R.string.paste_link_label)) },
+                placeholder = { Text(stringResource(R.string.paste_link_placeholder)) },
                 singleLine = false,
                 maxLines = 3,
                 shape = RoundedCornerShape(12.dp),
                 trailingIcon = {
                     if (url.isNotEmpty()) {
                         IconButton(onClick = onClear) {
-                            Icon(Icons.Default.Clear, contentDescription = "Wyczyść")
+                            Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.clear_input))
                         }
                     }
                 }
@@ -322,14 +476,14 @@ fun UrlInputCard(
                 ) {
                     Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Wklej ze schowka")
+                    Text(stringResource(R.string.paste_from_clipboard))
                 }
 
                 if (platform != LinkParser.Platform.UNKNOWN) {
                     val label = when (platform) {
-                        LinkParser.Platform.YOUTUBE -> "YouTube / Shorts"
-                        LinkParser.Platform.TIKTOK -> "TikTok"
-                        else -> "Wspierany link"
+                        LinkParser.Platform.YOUTUBE -> stringResource(R.string.platform_youtube)
+                        LinkParser.Platform.TIKTOK -> stringResource(R.string.platform_tiktok)
+                        else -> stringResource(R.string.platform_supported)
                     }
                     Surface(
                         shape = RoundedCornerShape(8.dp),
@@ -369,7 +523,10 @@ fun MetadataPreviewCard(
             ) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.width(16.dp))
-                Text("Pobieranie informacji o wideo...", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    text = stringResource(R.string.fetching_metadata),
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
         } else if (metadata != null) {
             Row(
@@ -386,7 +543,7 @@ fun MetadataPreviewCard(
                 ) {
                     AsyncImage(
                         model = metadata.thumbnailUrl,
-                        contentDescription = "Miniaturka",
+                        contentDescription = stringResource(R.string.thumbnail_desc),
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
@@ -440,92 +597,6 @@ fun MetadataPreviewCard(
 }
 
 @Composable
-fun FormatSelectorCard(
-    selectedFormat: DownloadFormat,
-    onFormatSelected: (DownloadFormat) -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Format zapisu do galerii:",
-                fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.titleSmall
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                FormatOptionButton(
-                    title = "MP4 Wideo HD",
-                    subtitle = "Do Rolki / Galerii",
-                    icon = Icons.Default.Movie,
-                    isSelected = selectedFormat == DownloadFormat.MP4,
-                    onClick = { onFormatSelected(DownloadFormat.MP4) },
-                    modifier = Modifier.weight(1f)
-                )
-
-                FormatOptionButton(
-                    title = "MP3 Dźwięk",
-                    subtitle = "Do Muzyki",
-                    icon = Icons.Default.Audiotrack,
-                    isSelected = selectedFormat == DownloadFormat.MP3,
-                    onClick = { onFormatSelected(DownloadFormat.MP3) },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun FormatOptionButton(
-    title: String,
-    subtitle: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-    val containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface
-
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .border(width = if (isSelected) 2.dp else 1.dp, color = borderColor, shape = RoundedCornerShape(14.dp))
-            .background(containerColor)
-            .clickable { onClick() }
-            .padding(12.dp)
-    ) {
-        Column(horizontalAlignment = Alignment.Start) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = title,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
 fun DownloadStatusCard(
     state: DownloadUiState,
     onCancel: () -> Unit,
@@ -551,12 +622,12 @@ fun DownloadStatusCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Pobieranie...",
+                            text = stringResource(R.string.status_downloading),
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleMedium
                         )
                         TextButton(onClick = onCancel) {
-                            Text("Anuluj", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(R.string.cancel), color = MaterialTheme.colorScheme.error)
                         }
                     }
 
@@ -588,7 +659,7 @@ fun DownloadStatusCard(
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "Konwersja FFmpeg: ${state.stage}...",
+                            text = stringResource(R.string.status_processing, state.stage),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
@@ -603,7 +674,7 @@ fun DownloadStatusCard(
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "Zapisywanie w Galerii systemowej...",
+                            text = stringResource(R.string.status_saving_gallery),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
@@ -621,7 +692,11 @@ fun DownloadStatusCard(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Sukces! Zapisano w Galerii",
+                                text = if (state.config.mediaType == MediaType.VIDEO) {
+                                    stringResource(R.string.status_success_gallery)
+                                } else {
+                                    stringResource(R.string.status_success_music)
+                                },
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF1B5E20)
                             )
@@ -633,20 +708,20 @@ fun DownloadStatusCard(
                             )
                         }
                         IconButton(onClick = onReset) {
-                            Icon(Icons.Default.Close, contentDescription = "Zamknij")
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close))
                         }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Button(
-                        onClick = { onOpen(state.uri, state.format.mimeType) },
+                        onClick = { onOpen(state.uri, state.config.mimeType) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Otwórz w odtwarzaczu / galerii")
+                        Text(stringResource(R.string.open_in_player))
                     }
                 }
 
@@ -661,7 +736,7 @@ fun DownloadStatusCard(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Błąd pobierania",
+                                text = stringResource(R.string.status_error),
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.error
                             )
@@ -673,7 +748,7 @@ fun DownloadStatusCard(
                             )
                         }
                         IconButton(onClick = onReset) {
-                            Icon(Icons.Default.Close, contentDescription = "Zamknij")
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close))
                         }
                     }
                 }
@@ -703,7 +778,7 @@ fun RecentDownloadItemRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = if (item.format == DownloadFormat.MP4) Icons.Default.Movie else Icons.Default.Audiotrack,
+                imageVector = if (item.config.mediaType == MediaType.VIDEO) Icons.Default.Movie else Icons.Default.Audiotrack,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(28.dp)
@@ -720,14 +795,14 @@ fun RecentDownloadItemRow(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${item.format.displayName} • Zapisano w galerii",
+                    text = "${item.config.formatDisplayName} • ${item.config.qualityDisplayName}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
             IconButton(onClick = onOpen) {
-                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Otwórz plik")
+                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open file")
             }
         }
     }
