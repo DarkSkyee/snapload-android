@@ -1,40 +1,94 @@
-# Media Downloader (Android) 🎬🎵
+# SnapLoad 🎬📥
+### Modern, Lightning-Fast Video & Audio Downloader for Android (100% On-Device)
 
-Aplikacja mobilna na system Android umożliwiająca pobieranie multimediów z platform **YouTube / YouTube Shorts** oraz **TikTok** bezpośrednio na urządzeniu (**100% On-Device**), bez zewnętrznych serwerów proxy.
-
-## ✨ Główne Funkcje
-
-- **Wklejanie lub automatyczne udostępnianie (Share Sheet)**:
-  - Wklejanie linku bezpośrednio w aplikacji (z przyciskiem "Wklej ze schowka").
-  - Bezpośrednia integracja z systemowym menu **Udostępnij** w YouTube Shorts i TikToku – aplikacja automatycznie przechwytuje link, oczyszcza go z opisów i parametrów śledzących oraz pobiera podgląd.
-- **Wybór formatu**:
-  - **MP4 (Wideo HD)**: Automatyczne łączenie (muxing) strumienia wideo i audio w najwyższej jakości za pomocą wbudowanego silnika **FFmpeg**.
-  - **MP3 (Tylko dźwięk)**: Ekstrakcja ścieżki dźwiękowej i konwersja do MP3 (VBR jakość 0).
-- **Automatyczny zapis do Galerii systemowej**:
-  - Wideo MP4 trafia bezpośrednio do `Movies/Downloader` w systemowej **Galerii / Rolce aparatu** (`MediaStore.Video`).
-  - Audio MP3 trafia bezpośrednio do `Music/Downloader` w bibliotece muzycznej (`MediaStore.Audio`).
-- **Działanie w tle (Foreground Service)**:
-  - Długie pobieranie i konwersja działają nieprzerwanie w tle z powiadomieniem pokazującym procent postępu, prędkość (MB/s) oraz czas do ukończenia (ETA).
-- **Aktualizacje silnika w locie (OTA)**:
-  - Możliwość zaktualizowania rdzenia `yt-dlp` jednym kliknięciem (przycisk odświeżania na górnym pasku), co chroni przed zmianami w API YouTube.
+[![Release](https://img.shields.io/github/v/release/DarkSkyee/snapload-android?style=for-the-badge&color=6366F1&label=Release)](https://github.com/DarkSkyee/snapload-android/releases)
+[![Android](https://img.shields.io/badge/Android-10%2B%20%28API%2029%2B%29-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.3-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
+[![yt-dlp](https://img.shields.io/badge/Core-yt--dlp%20Engine-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://github.com/yt-dlp/yt-dlp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
 ---
 
-## 📱 Jak zainstalować APK na telefonie
+## 🌟 Highlights
 
-1. Przejdź do zakładki [Releases](../../releases).
-2. Pobierz najnowszy plik `MediaDownloader-release.apk` (lub `app-release.apk`).
-3. Na telefonie z Androidem otwórz pobrany plik.
-4. Jeśli pojawi się monit o "Zezwolenie na instalowanie aplikacji z tego źródła", włącz tę opcję w ustawieniach.
-5. Kliknij **Zainstaluj** i ciesz się aplikacją!
+**SnapLoad** is an ultra-fast, privacy-first multimedia downloader application engineered for Android. Unlike web-based converters or remote cloud services, **SnapLoad runs 100% on-device** using local Python/yt-dlp binaries and an embedded FFmpeg multimedia engine.
+
+Your links, files, and queries never leave your device. Downloaded media is immediately indexed and saved directly into the official Android system galleries:
+- 🎬 **Videos** &rarr; `Movies/SnapLoad` (Instantly viewable in Google Photos, Gallery & Players)
+- 🎵 **Audio Tracks** &rarr; `Music/SnapLoad` (Instantly recognized by Spotify, Samsung Music & Media Players)
 
 ---
 
-## 🛠️ Architektura Techniczna
+## ✨ Features
 
-- **Język i UI**: Kotlin 2.3 + Jetpack Compose (Material 3).
-- **Silnik ekstrakcji**: `youtubedl-android` (opakowany `yt-dlp` + `FFmpeg` + `Python`).
-- **Scoped Storage**: Android `MediaStore` API (`IS_PENDING` workflow, kompatybilność z Android 10 - 16+).
-- **Usługa w tle**: Android `ForegroundService` (`dataSync`).
-- **Obrazy**: Coil Compose.
-- **Wieloplatformowość procesorów**: Wsparcie dla architektur `arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`.
+- ⚡ **Instant Share Sheet & Clipboard Integration**:
+  - One-tap download directly from YouTube, Shorts, and TikTok via the system **"Share to..."** menu.
+  - Automatic URL detection and clipboard extraction.
+- 🎬 **Multi-Format Video Engine**:
+  - **MP4** *(Default & Universal)*, **MKV**, and **WebM**.
+  - Resolutions: **Best / Original (Up to 4K)**, **1080p Full HD**, **720p HD**, **480p SD**.
+- 🎵 **Studio-Grade Audio Extraction**:
+  - **MP3** *(Default 320 kbps)*, **M4A (AAC)**, **FLAC (Lossless)**, **WAV**, and **OPUS**.
+  - Bitrates: **320 kbps**, **256 kbps**, **192 kbps**, and **128 kbps**.
+- 🔄 **Autonomous Auto-Updates**:
+  - **yt-dlp Core Engine**: Automatic background updates every 24 hours to stay resilient against YouTube/TikTok API changes.
+  - **In-App GitHub Releases Updater**: Real-time checking and one-tap APK installation directly from GitHub Releases.
+- 🌐 **Multilingual Experience (i18n)**:
+  - English *(Default)* and Polish.
+  - Instant on-the-fly language switching without restarting the app.
+- 🎨 **Material 3 Expressive UI**:
+  - Smooth spring micro-interactions (*bouncy scale on press*).
+  - Animated bottom sheet settings modal.
+  - Live progress monitoring with real-time download speeds, ETA, and FFmpeg merger status indicators.
+
+---
+
+## 📲 How to Install
+
+1. Navigate to the **[Latest Releases](https://github.com/DarkSkyee/snapload-android/releases/latest)** page.
+2. Download the latest `SnapLoad-v*.apk` package.
+3. Open the downloaded APK on your Android phone.
+4. If prompted, allow **"Install unknown apps"** for your browser or file manager.
+5. Launch **SnapLoad** and start downloading!
+
+---
+
+## 🏗️ Architecture & Technology Stack
+
+- **UI Layer**: Jetpack Compose, Material 3, Coroutine StateFlows, Coil for thumbnail caching.
+- **Service Layer**: Foreground Service (`FOREGROUND_SERVICE_TYPE_DATA_SYNC`) with persistent notification and cancelation hooks.
+- **Core Engine**: Embedded Python runtime (`youtubedl-android`) + FFmpeg binary distribution.
+- **Storage Layer**: Android 10+ Scoped Storage & MediaStore API (`MediaStore.Video` and `MediaStore.Audio`) with zero invasive permissions required.
+- **Updater**: GitHub Releases API consumer with Android `FileProvider` package installer integration.
+
+---
+
+## 🛠️ Building from Source
+
+### Prerequisites
+- JDK 17 (Recommended: Eclipse Adoptium OpenJDK 17)
+- Android SDK API 36 (Build Tools 36.0.0, NDK r25+)
+
+### Commands
+
+```powershell
+# Clone repository
+git clone https://github.com/DarkSkyee/snapload-android.git
+cd snapload-android
+
+# Run Unit Tests
+.\gradlew testDebugUnitTest
+
+# Assemble Debug APK
+.\gradlew assembleDebug
+
+# Output APK is located at:
+# app/build/outputs/apk/debug/app-debug.apk
+```
+
+---
+
+## 📄 License
+
+Distributed under the **MIT License**. Created with ❤️ by **DarkSkyee**.

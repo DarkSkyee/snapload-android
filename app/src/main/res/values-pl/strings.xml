@@ -1,0 +1,111 @@
+<resources>
+    <string name="app_name">SnapLoad</string>
+    <string name="app_tagline">Błyskawiczne pobieranie wideo i muzyki • 100% na urządzeniu</string>
+    <string name="tagline_platforms">YouTube Shorts &amp; TikTok • 100% na urządzeniu</string>
+
+    <!-- Sekcja linku -->
+    <string name="paste_link_label">Wklej link YouTube / TikTok</string>
+    <string name="paste_link_placeholder">https://youtube.com/shorts/... lub TikTok</string>
+    <string name="paste_from_clipboard">Wklej ze schowka</string>
+    <string name="clear_input">Wyczyść</string>
+    <string name="platform_youtube">YouTube / Shorts</string>
+    <string name="platform_tiktok">TikTok</string>
+    <string name="platform_supported">Wspierany link</string>
+
+    <!-- Podgląd wideo -->
+    <string name="fetching_metadata">Pobieranie informacji o wideo...</string>
+    <string name="thumbnail_desc">Miniaturka</string>
+    <string name="metadata_fetch_failed">Nie udało się pobrać podglądu (pobieranie nadal może działać): %1$s</string>
+
+    <!-- Typ i konfiguracja formatów -->
+    <string name="media_type_video">Wideo</string>
+    <string name="media_type_audio">Dźwięk</string>
+    <string name="media_format_label">Format</string>
+    <string name="media_quality_label">Jakość</string>
+    <string name="format_mp4_subtitle">Filmy / Galeria</string>
+    <string name="format_mkv_subtitle">Matroska Video</string>
+    <string name="format_webm_subtitle">WebM Open Video</string>
+    <string name="format_mp3_subtitle">Kolekcja Muzyki</string>
+    <string name="format_m4a_subtitle">Format AAC</string>
+    <string name="format_flac_subtitle">Bezstratny FLAC</string>
+    <string name="format_wav_subtitle">Nieskompresowany WAV</string>
+    <string name="format_opus_subtitle">Efektywny OPUS</string>
+
+    <!-- Etykiety jakości -->
+    <string name="quality_best_video">Najwyższa (Oryginalna / 4K)</string>
+    <string name="quality_1080p">1080p Full HD</string>
+    <string name="quality_720p">720p HD</string>
+    <string name="quality_480p">480p SD</string>
+
+    <string name="quality_best_audio">Najwyższa (320 kbps)</string>
+    <string name="quality_256k">256 kbps</string>
+    <string name="quality_192k">192 kbps</string>
+    <string name="quality_128k">128 kbps</string>
+
+    <!-- Przyciski akcji -->
+    <string name="download_video_btn">POBIERZ WIDEO (%1$s • %2$s)</string>
+    <string name="download_audio_btn">POBIERZ DŹWIĘK (%1$s • %2$s)</string>
+    <string name="cancel">Anuluj</string>
+    <string name="close">Zamknij</string>
+    <string name="open_in_player">Otwórz w odtwarzaczu / galerii</string>
+
+    <!-- Statusy pobierania -->
+    <string name="status_downloading">Pobieranie…</string>
+    <string name="status_processing">Przetwarzanie FFmpeg: %1$s…</string>
+    <string name="status_saving_gallery">Zapisywanie w Galerii…</string>
+    <string name="status_saving_music">Zapisywanie w Muzyce…</string>
+    <string name="status_success_gallery">Sukces! Zapisano w Movies/SnapLoad</string>
+    <string name="status_success_music">Sukces! Zapisano w Music/SnapLoad</string>
+    <string name="status_error">Błąd pobierania</string>
+    <string name="status_ffmpeg_merging">100% • Łączenie obrazu i dźwięku (FFmpeg)...</string>
+    <string name="status_ffmpeg_converting_audio">100% • Konwersja ścieżki dźwiękowej (FFmpeg)...</string>
+    <string name="status_ffmpeg_processing">100% • Przetwarzanie multimediów (FFmpeg)...</string>
+    <string name="notification_starting">Rozpoczynanie pobierania...</string>
+    <string name="notification_saving">Zapisywanie pliku multimedialnego...</string>
+    <string name="notification_saved_gallery">Zapisano w Movies/SnapLoad (%1$s)</string>
+    <string name="notification_saved_music">Zapisano w Music/SnapLoad (%1$s)</string>
+    <string name="notification_failed">Nie udało się zapisać pliku w pamięci urządzenia</string>
+
+    <!-- Historia -->
+    <string name="recent_downloads_title">Ostatnio pobrane</string>
+    <string name="recent_saved_in_gallery">Zapisano w Galerii</string>
+    <string name="recent_saved_in_music">Zapisano w Muzyce</string>
+    <string name="open_file_prompt">Sprawdź plik w aplikacji Galeria / Muzyka</string>
+
+    <!-- Kanał powiadomień -->
+    <string name="notification_channel_name">Pobieranie SnapLoad</string>
+    <string name="notification_channel_desc">Powiadomienia o bieżącym postępie pobierania i konwersji multimediów</string>
+
+    <!-- Menu ustawień -->
+    <string name="settings_title">Ustawienia i Aktualizacje</string>
+    <string name="settings_auto_updates_title">Automatyczne aktualizacje</string>
+    <string name="settings_language">Język / Language</string>
+    <string name="settings_lang_en">English</string>
+    <string name="settings_lang_pl">Polski</string>
+    <string name="settings_auto_engine">Automatyczne aktualizacje silnika yt-dlp</string>
+    <string name="settings_auto_engine_desc">Utrzymuje rdzeń yt-dlp w najnowszej wersji, zapobiegając błędom serwisów</string>
+    <string name="settings_auto_app">Sprawdzaj aktualizacje aplikacji</string>
+    <string name="settings_auto_app_desc">Powiadamia o pojawieniu się nowej wersji APK SnapLoad na GitHubie</string>
+    <string name="settings_check_app_now">Sprawdź aktualizacje aplikacji</string>
+    <string name="settings_update_engine_now">Aktualizuj silnik yt-dlp teraz</string>
+    <string name="settings_engine_updating">Aktualizowanie rdzenia yt-dlp...</string>
+    <string name="settings_app_checking">Sprawdzanie GitHub Releases...</string>
+    <string name="settings_engine_version_label">Wersja silnika: %1$s</string>
+    <string name="settings_app_version_label">Wersja aplikacji: %1$s</string>
+    <string name="settings_about_title">O SnapLoad</string>
+    <string name="settings_about_body">Szybki, prywatny program do pobierania wideo i audio działający w 100% na urządzeniu w oparciu o yt-dlp oraz FFmpeg. Twórca: DarkSkyee.</string>
+    <string name="settings_github_repo">Repozytorium GitHub</string>
+
+    <!-- Okno dialogowe aktualizacji -->
+    <string name="update_dialog_title">Dostępna nowa wersja!</string>
+    <string name="update_dialog_version">Wydano nową wersję %1$s</string>
+    <string name="update_dialog_notes">Co nowego:</string>
+    <string name="update_dialog_button_install">Pobierz i zainstaluj APK</string>
+    <string name="update_dialog_button_view_github">Zobacz na GitHubie</string>
+    <string name="update_dialog_button_later">Później</string>
+    <string name="update_downloading">Pobieranie aktualizacji… %1$d%%</string>
+    <string name="update_download_failed">Błąd pobierania pliku APK: %1$s</string>
+    <string name="update_up_to_date">SnapLoad jest aktualny (%1$s)</string>
+    <string name="update_check_failed">Nie udało się sprawdzić aktualizacji: %1$s</string>
+    <string name="permission_install_unknown_apps">Zezwól na instalowanie aplikacji ze SnapLoad w Ustawieniach, a następnie dotknij Zainstaluj ponownie.</string>
+</resources>
