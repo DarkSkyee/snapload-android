@@ -14,10 +14,17 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.example.mediadownloader.DownloaderApplication
 import com.example.mediadownloader.MainActivity
+import com.example.mediadownloader.R
 import com.example.mediadownloader.data.DefaultDownloadRepository
 import com.example.mediadownloader.data.DownloadRepository
+import com.example.mediadownloader.model.AudioFormat
+import com.example.mediadownloader.model.AudioQuality
+import com.example.mediadownloader.model.DownloadConfiguration
 import com.example.mediadownloader.model.DownloadFormat
 import com.example.mediadownloader.model.DownloadUiState
+import com.example.mediadownloader.model.MediaType
+import com.example.mediadownloader.model.VideoFormat
+import com.example.mediadownloader.model.VideoQuality
 import com.example.mediadownloader.util.MediaStoreSaver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,16 +46,30 @@ class DownloadService : Service() {
         const val EXTRA_URL = "extra_url"
         const val EXTRA_FORMAT = "extra_format"
         const val EXTRA_TITLE = "extra_title"
+        const val EXTRA_MEDIA_TYPE = "extra_media_type"
+        const val EXTRA_VIDEO_FORMAT = "extra_video_format"
+        const val EXTRA_VIDEO_QUALITY = "extra_video_quality"
+        const val EXTRA_AUDIO_FORMAT = "extra_audio_format"
+        const val EXTRA_AUDIO_QUALITY = "extra_audio_quality"
 
         private val _downloadState = MutableStateFlow<DownloadUiState>(DownloadUiState.Idle)
         val downloadState: StateFlow<DownloadUiState> = _downloadState.asStateFlow()
 
         fun startDownload(context: Context, url: String, format: DownloadFormat, title: String) {
+            startDownload(context, url, DownloadConfiguration.fromDownloadFormat(format), title)
+        }
+
+        fun startDownload(context: Context, url: String, config: DownloadConfiguration, title: String) {
             val intent = Intent(context, DownloadService::class.java).apply {
                 action = ACTION_START_DOWNLOAD
                 putExtra(EXTRA_URL, url)
-                putExtra(EXTRA_FORMAT, format.name)
                 putExtra(EXTRA_TITLE, title)
+                putExtra(EXTRA_FORMAT, config.asDownloadFormat.name)
+                putExtra(EXTRA_MEDIA_TYPE, config.mediaType.name)
+                putExtra(EXTRA_VIDEO_FORMAT, config.videoFormat.name)
+                putExtra(EXTRA_VIDEO_QUALITY, config.videoQuality.name)
+                putExtra(EXTRA_AUDIO_FORMAT, config.audioFormat.name)
+                putExtra(EXTRA_AUDIO_QUALITY, config.audioQuality.name)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -87,10 +108,27 @@ class DownloadService : Service() {
         when (intent?.action) {
             ACTION_START_DOWNLOAD -> {
                 val url = intent.getStringExtra(EXTRA_URL) ?: return START_NOT_STICKY
-                val formatName = intent.getStringExtra(EXTRA_FORMAT) ?: DownloadFormat.MP4.name
-                val format = DownloadFormat.valueOf(formatName)
-                val title = intent.getStringExtra(EXTRA_TITLE) ?: "Pobieranie w toku"
-                handleStartDownload(url, format, title)
+                val title = intent.getStringExtra(EXTRA_TITLE) ?: "SnapLoad Download"
+
+                val mediaType = intent.getStringExtra(EXTRA_MEDIA_TYPE)?.let { runCatching { MediaType.valueOf(it) }.getOrNull() }
+                    ?: MediaType.VIDEO
+                val videoFormat = intent.getStringExtra(EXTRA_VIDEO_FORMAT)?.let { runCatching { VideoFormat.valueOf(it) }.getOrNull() }
+                    ?: VideoFormat.MP4
+                val videoQuality = intent.getStringExtra(EXTRA_VIDEO_QUALITY)?.let { runCatching { VideoQuality.valueOf(it) }.getOrNull() }
+                    ?: VideoQuality.BEST
+                val audioFormat = intent.getStringExtra(EXTRA_AUDIO_FORMAT)?.let { runCatching { AudioFormat.valueOf(it) }.getOrNull() }
+                    ?: AudioFormat.MP3
+                val audioQuality = intent.getStringExtra(EXTRA_AUDIO_QUALITY)?.let { runCatching { AudioQuality.valueOf(it) }.getOrNull() }
+                    ?: AudioQuality.BEST
+
+                val config = DownloadConfiguration(
+                    mediaType = mediaType,
+                    videoFormat = videoFormat,
+                    videoQuality = videoQuality,
+                    audioFormat = audioFormat,
+                    audioQuality = audioQuality
+                )
+                handleStartDownload(url, config, title)
             }
             ACTION_CANCEL_DOWNLOAD -> {
                 handleCancelDownload()
@@ -99,13 +137,13 @@ class DownloadService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun handleStartDownload(url: String, format: DownloadFormat, initialTitle: String) {
+    private fun handleStartDownload(url: String, config: DownloadConfiguration, initialTitle: String) {
         val downloadId = "dl_" + UUID.randomUUID().toString().substring(0, 8)
         currentDownloadId = downloadId
 
         val notification = createNotification(
             title = initialTitle,
-            contentText = "Rozpoczynanie pobierania...",
+            contentText = getString(R.string.notification_starting),
             progress = 0,
             isIndeterminate = true
         )
@@ -121,14 +159,14 @@ class DownloadService : Service() {
             startForeground(DownloaderApplication.NOTIFICATION_ID, notification)
         }
 
-        _downloadState.value = DownloadUiState.Downloading(0f, "Inicjalizacja...", 0)
+        _downloadState.value = DownloadUiState.Downloading(0f, "Initializing...", 0)
 
         downloadJob = serviceScope.launch(Dispatchers.IO) {
             try {
                 // 1. Download stream using repository
                 val downloadResult = repository.downloadMedia(
                     url = url,
-                    format = format,
+                    config = config,
                     downloadId = downloadId
                 ) { progress, eta, statusText ->
                     _downloadState.value = DownloadUiState.Downloading(progress, statusText, eta)
@@ -136,9 +174,9 @@ class DownloadService : Service() {
                 }
 
                 if (downloadResult.isFailure) {
-                    val error = downloadResult.exceptionOrNull()?.message ?: "Błąd pobierania"
+                    val error = downloadResult.exceptionOrNull()?.message ?: "Download failed"
                     _downloadState.value = DownloadUiState.Error(error)
-                    showCompletionNotification(initialTitle, "Błąd: $error", false, null)
+                    showCompletionNotification(initialTitle, "Error: $error", false, null, config.mimeType)
                     stopForeground(STOP_FOREGROUND_DETACH)
                     stopSelf()
                     return@launch
@@ -146,36 +184,41 @@ class DownloadService : Service() {
 
                 val tempFile = downloadResult.getOrThrow()
 
-                // 2. Save directly to Android Gallery via MediaStore
+                // 2. Save directly to Android MediaStore
                 _downloadState.value = DownloadUiState.SavingToGallery
-                updateNotificationIndeterminate(initialTitle, "Zapisywanie do galerii...")
+                updateNotificationIndeterminate(initialTitle, getString(R.string.notification_saving))
 
                 val savedUri = MediaStoreSaver.saveToGallery(
                     context = applicationContext,
                     tempFile = tempFile,
                     title = initialTitle,
-                    format = format
+                    config = config
                 )
 
                 if (savedUri != null) {
-                    _downloadState.value = DownloadUiState.Success(initialTitle, savedUri, format)
+                    val message = getString(
+                        if (config.mediaType == MediaType.VIDEO) R.string.notification_saved_gallery else R.string.notification_saved_music,
+                        config.formatDisplayName
+                    )
+                    _downloadState.value = DownloadUiState.Success(initialTitle, savedUri, config.asDownloadFormat, config)
                     showCompletionNotification(
                         initialTitle,
-                        "Zapisano w galerii (${format.displayName})",
+                        message,
                         true,
-                        savedUri
+                        savedUri,
+                        config.mimeType
                     )
                 } else {
-                    val errorMsg = "Nie udało się zapisać pliku w pamięci urządzenia"
+                    val errorMsg = getString(R.string.notification_failed)
                     _downloadState.value = DownloadUiState.Error(errorMsg)
-                    showCompletionNotification(initialTitle, errorMsg, false, null)
+                    showCompletionNotification(initialTitle, errorMsg, false, null, config.mimeType)
                 }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Download service crashed: ${e.message}", e)
-                val errorMsg = e.message ?: "Wystąpił nieoczekiwany błąd"
+                val errorMsg = e.message ?: "Unexpected error occurred"
                 _downloadState.value = DownloadUiState.Error(errorMsg)
-                showCompletionNotification(initialTitle, "Błąd: $errorMsg", false, null)
+                showCompletionNotification(initialTitle, "Error: $errorMsg", false, null, config.mimeType)
             } finally {
                 stopForeground(STOP_FOREGROUND_DETACH)
                 stopSelf()
@@ -229,7 +272,7 @@ class DownloadService : Service() {
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingOpenApp)
             .setProgress(100, progress, isIndeterminate)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Anuluj", pendingCancel)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(com.example.mediadownloader.R.string.cancel), pendingCancel)
             .build()
     }
 
@@ -257,11 +300,12 @@ class DownloadService : Service() {
         title: String,
         message: String,
         isSuccess: Boolean,
-        mediaUri: Uri?
+        mediaUri: Uri?,
+        mimeType: String
     ) {
         val intent = if (isSuccess && mediaUri != null) {
             Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(mediaUri, if (mediaUri.toString().contains("video")) "video/*" else "audio/*")
+                setDataAndType(mediaUri, mimeType)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
         } else {

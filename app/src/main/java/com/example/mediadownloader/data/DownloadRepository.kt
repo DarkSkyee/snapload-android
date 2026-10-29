@@ -2,8 +2,12 @@ package com.example.mediadownloader.data
 
 import android.content.Context
 import android.util.Log
+import com.example.mediadownloader.model.AudioFormat
+import com.example.mediadownloader.model.DownloadConfiguration
 import com.example.mediadownloader.model.DownloadFormat
 import com.example.mediadownloader.model.MediaMetadata
+import com.example.mediadownloader.model.MediaType
+import com.example.mediadownloader.model.VideoFormat
 import com.example.mediadownloader.util.LinkParser
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
@@ -20,8 +24,15 @@ interface DownloadRepository {
         downloadId: String,
         onProgress: (progress: Float, etaSeconds: Long, statusText: String) -> Unit
     ): Result<File>
+    suspend fun downloadMedia(
+        url: String,
+        config: DownloadConfiguration,
+        downloadId: String,
+        onProgress: (progress: Float, etaSeconds: Long, statusText: String) -> Unit
+    ): Result<File>
     suspend fun cancelDownload(downloadId: String): Boolean
     suspend fun updateEngine(): Result<String>
+    suspend fun checkAndAutoUpdateEngineIfNeeded(force: Boolean = false): Result<String>?
     fun getEngineVersion(): String
 }
 
@@ -30,7 +41,10 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
     companion object {
         private const val TAG = "DownloadRepo"
         private const val MAX_CACHE_AGE_MS = 6 * 60 * 60 * 1000L // 6 hours
+        private const val ENGINE_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000L // 24 hours
     }
+
+    private val preferences = AppPreferences(context)
 
     override suspend fun fetchMetadata(url: String): Result<MediaMetadata> = withContext(Dispatchers.IO) {
         try {
@@ -43,7 +57,7 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
             val videoInfo = YoutubeDL.getInstance().getInfo(request)
             val metadata = MediaMetadata(
                 url = url,
-                title = videoInfo.title ?: "Pobrane_multimedia_${System.currentTimeMillis()}",
+                title = videoInfo.title ?: "SnapLoad_${System.currentTimeMillis()}",
                 author = videoInfo.uploader ?: videoInfo.uploaderId ?: "",
                 thumbnailUrl = videoInfo.thumbnail,
                 durationSeconds = videoInfo.duration.toLong(),
@@ -61,6 +75,15 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
         format: DownloadFormat,
         downloadId: String,
         onProgress: (progress: Float, etaSeconds: Long, statusText: String) -> Unit
+    ): Result<File> {
+        return downloadMedia(url, DownloadConfiguration.fromDownloadFormat(format), downloadId, onProgress)
+    }
+
+    override suspend fun downloadMedia(
+        url: String,
+        config: DownloadConfiguration,
+        downloadId: String,
+        onProgress: (progress: Float, etaSeconds: Long, statusText: String) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         try {
             YoutubeDLInitializer.ensureInitialized(context)
@@ -68,55 +91,60 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
             cleanOldCacheFiles(downloadDir)
 
             val uniqueFileId = UUID.randomUUID().toString().substring(0, 8)
-            val outputTemplate = "${downloadDir.absolutePath}/media_${uniqueFileId}.%(ext)s"
+            val outputTemplate = "${downloadDir.absolutePath}/snapload_${uniqueFileId}.%(ext)s"
 
             val request = YoutubeDLRequest(url).apply {
                 addOption("-o", outputTemplate)
                 addOption("--no-mtime")
                 addOption("--no-playlist")
 
-                when (format) {
-                    DownloadFormat.MP4 -> {
-                        addOption("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best")
-                        addOption("--merge-output-format", "mp4")
-                    }
-                    DownloadFormat.MP3 -> {
-                        addOption("-x")
-                        addOption("--audio-format", "mp3")
-                        addOption("--audio-quality", "0")
-                    }
+                if (config.mediaType == MediaType.VIDEO) {
+                    addOption("-f", config.videoQuality.ytdlFormatSelector)
+                    addOption("--merge-output-format", config.videoFormat.extension)
+                    addOption("--remux-video", config.videoFormat.extension)
+                } else {
+                    addOption("-x")
+                    addOption("--audio-format", config.audioFormat.extension)
+                    addOption("--audio-quality", config.audioQuality.ytdlQuality)
                 }
             }
 
-            Log.d(TAG, "Executing download $downloadId for $url ($format)")
+            Log.d(TAG, "Executing download $downloadId for $url ($config)")
 
             YoutubeDL.getInstance().execute(request, downloadId) { progress, etaInSeconds, line ->
                 val statusText = parseStatusLine(line, progress, etaInSeconds)
                 onProgress(progress, etaInSeconds, statusText)
             }
 
-            // Locate the generated final file, strictly avoiding partial / intermediate files
-            val expectedExtension = format.extension
-            val targetFile = downloadDir.listFiles { file ->
-                file.isFile &&
-                        file.name.startsWith("media_${uniqueFileId}") &&
-                        !file.name.endsWith(".part", ignoreCase = true) &&
-                        !file.name.endsWith(".ytdl", ignoreCase = true) &&
-                        !file.name.endsWith(".temp", ignoreCase = true) &&
-                        file.extension.equals(expectedExtension, ignoreCase = true)
-            }?.firstOrNull() ?: downloadDir.listFiles { file ->
-                file.isFile &&
-                        file.name.startsWith("media_${uniqueFileId}") &&
-                        !file.name.endsWith(".part", ignoreCase = true) &&
-                        !file.name.endsWith(".ytdl", ignoreCase = true) &&
-                        !file.name.endsWith(".temp", ignoreCase = true)
-            }?.firstOrNull()
+            // Locate final file avoiding temp/part/auxiliary files
+            val expectedExtension = config.extension
+            val exactFile = File(downloadDir, "snapload_${uniqueFileId}.$expectedExtension")
+
+            val targetFile = if (exactFile.exists() && exactFile.length() > 0L) {
+                exactFile
+            } else {
+                val candidateFiles = downloadDir.listFiles { file ->
+                    file.isFile &&
+                            file.name.startsWith("snapload_${uniqueFileId}") &&
+                            !file.name.endsWith(".part", ignoreCase = true) &&
+                            !file.name.endsWith(".ytdl", ignoreCase = true) &&
+                            !file.name.endsWith(".temp", ignoreCase = true) &&
+                            !file.name.endsWith(".aria2", ignoreCase = true) &&
+                            !file.name.endsWith(".jpg", ignoreCase = true) &&
+                            !file.name.endsWith(".jpeg", ignoreCase = true) &&
+                            !file.name.endsWith(".png", ignoreCase = true) &&
+                            !file.name.endsWith(".webp", ignoreCase = true)
+                } ?: emptyArray()
+
+                candidateFiles.firstOrNull { it.extension.equalsIgnoreCase(expectedExtension) && it.length() > 0L }
+                    ?: candidateFiles.filter { it.length() > 0L }.maxByOrNull { it.length() }
+            }
 
             if (targetFile != null && targetFile.exists() && targetFile.length() > 0L) {
                 Log.i(TAG, "Download finished successfully: ${targetFile.absolutePath} (${targetFile.length()} bytes)")
                 Result.success(targetFile)
             } else {
-                val errorMsg = "Pobieranie zakończone, ale nie znaleziono pliku wyjściowego w ${downloadDir.absolutePath}"
+                val errorMsg = "Download completed, but output file not found in ${downloadDir.absolutePath}"
                 Log.e(TAG, errorMsg)
                 Result.failure(IllegalStateException(errorMsg))
             }
@@ -140,23 +168,36 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
         try {
             YoutubeDLInitializer.ensureInitialized(context)
             val status = YoutubeDL.getInstance().updateYoutubeDL(context, YoutubeDL.UpdateChannel._STABLE)
-            val newVersion = YoutubeDL.getInstance().versionName(context) ?: "nieznana"
-            Result.success("Zaktualizowano silnik yt-dlp ($status). Wersja: $newVersion")
+            val newVersion = YoutubeDL.getInstance().versionName(context) ?: "unknown"
+            preferences.lastEngineUpdateCheck = System.currentTimeMillis()
+            Result.success("yt-dlp engine updated ($status). Version: $newVersion")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to update yt-dlp engine: ${e.message}", e)
             Result.failure(e)
         }
     }
 
+    override suspend fun checkAndAutoUpdateEngineIfNeeded(force: Boolean): Result<String>? {
+        if (!force && !preferences.autoUpdateEngine) return null
+
+        val now = System.currentTimeMillis()
+        val timeSinceLastCheck = now - preferences.lastEngineUpdateCheck
+
+        if (force || timeSinceLastCheck > ENGINE_UPDATE_INTERVAL_MS || preferences.lastEngineUpdateCheck == 0L) {
+            return updateEngine()
+        }
+        return null
+    }
+
     override fun getEngineVersion(): String {
         return try {
             if (YoutubeDLInitializer.isReady()) {
-                YoutubeDL.getInstance().versionName(context) ?: "Dostępny"
+                YoutubeDL.getInstance().versionName(context) ?: "Ready"
             } else {
-                "Inicjalizacja..."
+                "Initializing..."
             }
         } catch (_: Exception) {
-            "Dostępny"
+            "Ready"
         }
     }
 
@@ -180,16 +221,15 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
 
         // Inform user clearly when FFmpeg post-processing / conversion is executing
         if (line.contains("[Merger]") || line.contains("Merging formats")) {
-            return "100% • Łączenie obrazu i dźwięku (FFmpeg)..."
+            return "100% • Merging video & audio (FFmpeg)..."
         }
         if (line.contains("[ExtractAudio]") || (line.contains("Destination:") && line.contains(".mp3"))) {
-            return "100% • Konwersja audio do formatu MP3..."
+            return "100% • Converting audio track (FFmpeg)..."
         }
         if (line.contains("[ffmpeg]")) {
-            return "100% • Przetwarzanie multimediów (FFmpeg)..."
+            return "100% • Processing media (FFmpeg)..."
         }
 
-        // Extract download speed if present in yt-dlp output, e.g., "12.3MiB/s"
         val speedMatch = "([0-9.]+ ?[kKMGT]?i?B/s)".toRegex().find(line)
         val speed = speedMatch?.value
 
@@ -205,4 +245,7 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
             }
         }
     }
+
+    private fun String.equalsIgnoreCase(other: String): Boolean =
+        this.equals(other, ignoreCase = true)
 }
