@@ -27,96 +27,129 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.border
 import androidx.compose.ui.unit.sp
 
+val SnapElectricCyan = Color(0xFF00F2FE)
 val SnapIndigo = Color(0xFF6366F1)
-val SnapCyan = Color(0xFF06B6D4)
-val SnapDarkBg = Color(0xFF0F172A)
-val SnapNeonViolet = Color(0xFF818CF8)
+val SnapNeonViolet = Color(0xFFA855F7)
+val SnapDarkSurface = Color(0xFF0B0F19)
+val SnapBorderGlow = Color(0x3300F2FE)
 
 @Composable
 fun AppLogoIcon(
     size: Dp = 40.dp,
     modifier: Modifier = Modifier
 ) {
-    val gradientBrush = Brush.linearGradient(
-        colors = listOf(SnapIndigo, SnapCyan)
+    val bgBrush = Brush.linearGradient(
+        colors = listOf(Color(0xFF0F172A), Color(0xFF1E143B)),
+        start = Offset(0f, 0f),
+        end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
     )
 
     Box(
         modifier = modifier
             .size(size)
-            .shadow(elevation = 6.dp, shape = RoundedCornerShape(size * 0.28f))
+            .shadow(elevation = 8.dp, shape = RoundedCornerShape(size * 0.28f), spotColor = SnapIndigo)
             .clip(RoundedCornerShape(size * 0.28f))
-            .background(gradientBrush),
+            .background(bgBrush)
+            .border(
+                width = 1.dp,
+                brush = Brush.linearGradient(listOf(Color(0x6000F2FE), Color(0x306366F1))),
+                shape = RoundedCornerShape(size * 0.28f)
+            ),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.size(size * 0.82f)) {
+        Canvas(modifier = Modifier.size(size * 0.85f)) {
             val w = this.size.width
             val h = this.size.height
 
-            // 1. Subtle sound wave ripples on the sides
-            val waveColor = Color.White.copy(alpha = 0.40f)
-            val waveWidth = w * 0.055f
-
-            // Left audio wave arc
-            drawArc(
-                color = waveColor,
-                startAngle = 120f,
-                sweepAngle = 120f,
-                useCenter = false,
-                topLeft = Offset(-w * 0.08f, h * 0.22f),
-                size = Size(w * 0.45f, h * 0.56f),
-                style = Stroke(width = waveWidth, cap = StrokeCap.Round)
+            // 1. Equalizer audio fins on sides
+            val finWidth = w * 0.055f
+            // Left outer fin
+            drawLine(
+                color = SnapElectricCyan.copy(alpha = 0.45f),
+                start = Offset(w * 0.12f, h * 0.44f),
+                end = Offset(w * 0.12f, h * 0.58f),
+                strokeWidth = finWidth,
+                cap = StrokeCap.Round
+            )
+            // Left inner fin
+            drawLine(
+                color = SnapIndigo.copy(alpha = 0.80f),
+                start = Offset(w * 0.20f, h * 0.38f),
+                end = Offset(w * 0.20f, h * 0.64f),
+                strokeWidth = finWidth,
+                cap = StrokeCap.Round
             )
 
-            // Right audio wave arc
-            drawArc(
-                color = waveColor,
-                startAngle = -60f,
-                sweepAngle = 120f,
-                useCenter = false,
-                topLeft = Offset(w * 0.63f, h * 0.22f),
-                size = Size(w * 0.45f, h * 0.56f),
-                style = Stroke(width = waveWidth, cap = StrokeCap.Round)
+            // Right inner fin
+            drawLine(
+                color = SnapIndigo.copy(alpha = 0.80f),
+                start = Offset(w * 0.80f, h * 0.38f),
+                end = Offset(w * 0.80f, h * 0.64f),
+                strokeWidth = finWidth,
+                cap = StrokeCap.Round
+            )
+            // Right outer fin
+            drawLine(
+                color = SnapElectricCyan.copy(alpha = 0.45f),
+                start = Offset(w * 0.88f, h * 0.44f),
+                end = Offset(w * 0.88f, h * 0.58f),
+                strokeWidth = finWidth,
+                cap = StrokeCap.Round
             )
 
-            // 2. Play Symbol (Right-pointing geometric triangle)
-            val playPath = Path().apply {
-                moveTo(w * 0.32f, h * 0.22f)
-                lineTo(w * 0.32f, h * 0.78f)
-                lineTo(w * 0.76f, h * 0.50f)
-                close()
+            // 2. Stylized 'S' speed ribbon
+            val sPath = Path().apply {
+                moveTo(w * 0.68f, h * 0.26f)
+                cubicTo(w * 0.56f, h * 0.21f, w * 0.38f, h * 0.24f, w * 0.35f, h * 0.34f)
+                cubicTo(w * 0.31f, h * 0.42f, w * 0.36f, h * 0.49f, w * 0.46f, h * 0.53f)
+                lineTo(w * 0.56f, h * 0.57f)
+                cubicTo(w * 0.66f, h * 0.61f, w * 0.69f, h * 0.68f, w * 0.66f, h * 0.76f)
+                cubicTo(w * 0.62f, h * 0.82f, w * 0.48f, h * 0.84f, w * 0.36f, h * 0.78f)
             }
             drawPath(
-                path = playPath,
-                color = Color.White.copy(alpha = 0.95f)
+                path = sPath,
+                brush = Brush.linearGradient(
+                    colors = listOf(SnapElectricCyan, SnapIndigo, SnapNeonViolet),
+                    start = Offset(w * 0.35f, h * 0.25f),
+                    end = Offset(w * 0.68f, h * 0.80f)
+                ),
+                style = Stroke(
+                    width = w * 0.09f,
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round
+                )
             )
 
-            // 3. Central Downward Download Arrow Cutout
+            // 3. Central Downward Download Arrow
             val arrowPath = Path().apply {
-                // Arrow stem
-                moveTo(w * 0.44f, h * 0.32f)
-                lineTo(w * 0.50f, h * 0.32f)
-                lineTo(w * 0.50f, h * 0.46f)
-                // Arrow head wings
-                lineTo(w * 0.56f, h * 0.46f)
-                lineTo(w * 0.47f, h * 0.60f)
-                lineTo(w * 0.38f, h * 0.46f)
-                lineTo(w * 0.44f, h * 0.46f)
-                close()
+                // Shaft
+                moveTo(w * 0.50f, h * 0.36f)
+                lineTo(w * 0.50f, h * 0.62f)
+                // Left wing
+                moveTo(w * 0.38f, h * 0.52f)
+                lineTo(w * 0.50f, h * 0.64f)
+                // Right wing
+                lineTo(w * 0.62f, h * 0.52f)
             }
             drawPath(
                 path = arrowPath,
-                color = SnapDarkBg
+                color = Color.White,
+                style = Stroke(
+                    width = w * 0.08f,
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round
+                )
             )
 
-            // 4. Media baseline tray
+            // 4. Media speed baseline
             drawLine(
-                color = SnapDarkBg,
-                start = Offset(w * 0.37f, h * 0.66f),
-                end = Offset(w * 0.57f, h * 0.66f),
-                strokeWidth = w * 0.06f,
+                color = SnapElectricCyan,
+                start = Offset(w * 0.38f, h * 0.73f),
+                end = Offset(w * 0.62f, h * 0.73f),
+                strokeWidth = w * 0.05f,
                 cap = StrokeCap.Round
             )
         }

@@ -1,6 +1,7 @@
 package com.example.mediadownloader
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -45,6 +46,21 @@ class MainActivity : ComponentActivity() {
             // Notification permission handled
         }
 
+    override fun attachBaseContext(newBase: Context) {
+        val prefs = com.example.mediadownloader.data.AppPreferences(newBase)
+        val lang = prefs.selectedLanguage
+        super.attachBaseContext(LocaleHelper.createLocalizedContext(newBase, lang))
+    }
+
+    override fun applyOverrideConfiguration(overrideConfiguration: android.content.res.Configuration?) {
+        if (overrideConfiguration != null) {
+            val prefs = com.example.mediadownloader.data.AppPreferences(this)
+            val lang = prefs.selectedLanguage
+            LocaleHelper.updateConfigurationLocale(overrideConfiguration, lang)
+        }
+        super.applyOverrideConfiguration(overrideConfiguration)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -55,7 +71,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val localizedContext = remember(uiState.currentLanguage) {
-                LocaleHelper.createLocalizedContext(this@MainActivity, uiState.currentLanguage)
+                LocaleHelper.applyLanguage(this@MainActivity, uiState.currentLanguage)
             }
             val localizedConfiguration = remember(uiState.currentLanguage) {
                 LocaleHelper.getLocalizedConfiguration(resources.configuration, uiState.currentLanguage)

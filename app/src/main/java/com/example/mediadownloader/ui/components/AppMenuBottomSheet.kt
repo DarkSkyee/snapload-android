@@ -67,6 +67,12 @@ fun AppMenuBottomSheet(
     onDismissRequest: () -> Unit
 ) {
     val context = LocalContext.current
+    val localizedContext = androidx.compose.runtime.remember(currentLanguage) {
+        com.example.mediadownloader.util.LocaleHelper.createLocalizedContext(context, currentLanguage)
+    }
+    val localizedConfig = androidx.compose.runtime.remember(currentLanguage) {
+        com.example.mediadownloader.util.LocaleHelper.getLocalizedConfiguration(context.resources.configuration, currentLanguage)
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -74,14 +80,18 @@ fun AppMenuBottomSheet(
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.ui.platform.LocalContext provides localizedContext,
+            androidx.compose.ui.platform.LocalConfiguration provides localizedConfig
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 32.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -261,6 +271,7 @@ fun AppMenuBottomSheet(
             }
         }
     }
+}
 }
 
 @Composable
