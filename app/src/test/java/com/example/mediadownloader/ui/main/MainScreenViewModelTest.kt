@@ -1,8 +1,14 @@
 package com.example.mediadownloader.ui.main
 
 import com.example.mediadownloader.data.DownloadRepository
+import com.example.mediadownloader.model.AudioFormat
+import com.example.mediadownloader.model.AudioQuality
+import com.example.mediadownloader.model.DownloadConfiguration
 import com.example.mediadownloader.model.DownloadFormat
 import com.example.mediadownloader.model.MediaMetadata
+import com.example.mediadownloader.model.MediaType
+import com.example.mediadownloader.model.VideoFormat
+import com.example.mediadownloader.model.VideoQuality
 import com.example.mediadownloader.util.LinkParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -46,6 +52,9 @@ class MainScreenViewModelTest {
         assertEquals("", state.urlInput)
         assertEquals(LinkParser.Platform.UNKNOWN, state.detectedPlatform)
         assertEquals(DownloadFormat.MP4, state.selectedFormat)
+        assertEquals(MediaType.VIDEO, state.downloadConfig.mediaType)
+        assertEquals(VideoFormat.MP4, state.downloadConfig.videoFormat)
+        assertEquals(VideoQuality.BEST, state.downloadConfig.videoQuality)
         assertFalse(state.isFetchingMetadata)
         assertNull(state.metadata)
         assertEquals("2026.01.01", state.engineVersion)
@@ -111,9 +120,43 @@ class MainScreenViewModelTest {
     fun onFormatSelected_updatesFormat() {
         viewModel.onFormatSelected(DownloadFormat.MP3)
         assertEquals(DownloadFormat.MP3, viewModel.uiState.value.selectedFormat)
+        assertEquals(MediaType.AUDIO, viewModel.uiState.value.downloadConfig.mediaType)
+        assertEquals(AudioFormat.MP3, viewModel.uiState.value.downloadConfig.audioFormat)
 
         viewModel.onFormatSelected(DownloadFormat.MP4)
         assertEquals(DownloadFormat.MP4, viewModel.uiState.value.selectedFormat)
+        assertEquals(MediaType.VIDEO, viewModel.uiState.value.downloadConfig.mediaType)
+        assertEquals(VideoFormat.MP4, viewModel.uiState.value.downloadConfig.videoFormat)
+    }
+
+    @Test
+    fun onConfigChanged_updatesConfigAndFormat() {
+        val newConfig = DownloadConfiguration(
+            mediaType = MediaType.AUDIO,
+            audioFormat = AudioFormat.FLAC,
+            audioQuality = AudioQuality.BEST
+        )
+        viewModel.onConfigChanged(newConfig)
+        assertEquals(newConfig, viewModel.uiState.value.downloadConfig)
+        assertEquals(DownloadFormat.FLAC, viewModel.uiState.value.selectedFormat)
+    }
+
+    @Test
+    fun setLanguage_updatesCurrentLanguage() {
+        viewModel.setLanguage("pl")
+        assertEquals("pl", viewModel.uiState.value.currentLanguage)
+
+        viewModel.setLanguage("en")
+        assertEquals("en", viewModel.uiState.value.currentLanguage)
+    }
+
+    @Test
+    fun setAutoUpdateToggles_updateState() {
+        viewModel.setAutoUpdateEngine(false)
+        assertFalse(viewModel.uiState.value.autoUpdateEngine)
+
+        viewModel.setAutoUpdateApp(false)
+        assertFalse(viewModel.uiState.value.autoUpdateApp)
     }
 
     @Test
@@ -164,9 +207,21 @@ private class FakeDownloadRepository : DownloadRepository {
         return Result.success(File.createTempFile("fake_media", ".${format.extension}"))
     }
 
+    override suspend fun downloadMedia(
+        url: String,
+        config: DownloadConfiguration,
+        downloadId: String,
+        onProgress: (progress: Float, etaSeconds: Long, statusText: String) -> Unit
+    ): Result<File> {
+        onProgress(50f, 10, "50% • 5 MB/s")
+        return Result.success(File.createTempFile("fake_media", ".${config.extension}"))
+    }
+
     override suspend fun cancelDownload(downloadId: String): Boolean = true
 
     override suspend fun updateEngine(): Result<String> = updateResult
+
+    override suspend fun checkAndAutoUpdateEngineIfNeeded(force: Boolean): Result<String>? = null
 
     override fun getEngineVersion(): String = currentVersion
 }
