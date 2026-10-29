@@ -153,4 +153,188 @@ class MainScreenViewModel(
     }
 
     fun onClearInput() {
-        metadataJob?.cancel()\n        _uiState.update {\n            it.copy(\n                urlInput = \"\",\n                detectedPlatform = LinkParser.Platform.UNKNOWN,\n                metadata = null,\n                metadataError = null\n            )\n        }\n        DownloadService.resetState()\n    }\n\n    fun startDownload(context: Context) {\n        val url = LinkParser.extractUrl(_uiState.value.urlInput) ?: _uiState.value.urlInput.trim()\n        if (url.isBlank()) return\n\n        val title = _uiState.value.metadata?.title\n            ?: \"SnapLoad_${System.currentTimeMillis()}\"\n        val config = _uiState.value.downloadConfig\n\n        DownloadService.startDownload(context, url, config, title)\n    }\n\n    fun cancelDownload(context: Context) {\n        DownloadService.cancelDownload(context)\n    }\n\n    fun resetDownloadState() {\n        DownloadService.resetState()\n    }\n\n    fun updateEngine() {\n        if (_uiState.value.isUpdatingEngine) return\n        _uiState.update { it.copy(isUpdatingEngine = true, engineUpdateMessage = null) }\n        viewModelScope.launch {\n            val result = repository.updateEngine()\n            _uiState.update {\n                it.copy(\n                    isUpdatingEngine = false,\n                    engineUpdateMessage = result.getOrNull() ?: \"Error: ${result.exceptionOrNull()?.message}\",\n                    engineVersion = repository.getEngineVersion()\n                )\n            }\n        }\n    }\n\n    fun clearEngineUpdateMessage() {\n        _uiState.update { it.copy(engineUpdateMessage = null) }\n    }\n\n    fun setLanguage(langCode: String) {\n        preferences?.selectedLanguage = langCode\n        _uiState.update { it.copy(currentLanguage = langCode) }\n    }\n\n    fun setAutoUpdateEngine(enabled: Boolean) {\n        preferences?.autoUpdateEngine = enabled\n        _uiState.update { it.copy(autoUpdateEngine = enabled) }\n    }\n\n    fun setAutoUpdateApp(enabled: Boolean) {\n        preferences?.autoUpdateApp = enabled\n        _uiState.update { it.copy(autoUpdateApp = enabled) }\n    }\n\n    fun checkForAppUpdates(manual: Boolean = true) {\n        val mgr = updateManager ?: return\n        if (_uiState.value.isCheckingAppUpdate) return\n\n        _uiState.update { it.copy(isCheckingAppUpdate = true, appUpdateMessage = null) }\n        viewModelScope.launch {\n            val result = mgr.checkForUpdates(force = true)\n            _uiState.update { current ->\n                when (result) {\n                    is UpdateCheckResult.UpdateAvailable -> {\n                        current.copy(\n                            isCheckingAppUpdate = false,\n                            availableRelease = result.releaseInfo,\n                            appUpdateMessage = null\n                        )\n                    }\n                    is UpdateCheckResult.UpToDate -> {\n                        current.copy(\n                            isCheckingAppUpdate = false,\n                            availableRelease = null,\n                            appUpdateMessage = if (manual) \"SnapLoad is up to date (${result.currentVersion})\" else null\n                        )\n                    }\n                    is UpdateCheckResult.Error -> {\n                        current.copy(\n                            isCheckingAppUpdate = false,\n                            availableRelease = null,\n                            appUpdateMessage = if (manual) \"Update check failed: ${result.message}\" else null\n                        )\n                    }\n                }\n            }\n        }\n    }\n\n    fun downloadAndInstallUpdate(releaseInfo: ReleaseInfo) {\n        val mgr = updateManager ?: return\n        val apkUrl = releaseInfo.apkDownloadUrl ?: return\n\n        val cachedApk = mgr.getDownloadedUpdateApk()\n        if (cachedApk != null) {\n            val installResult = mgr.promptInstallApk(cachedApk)\n            if (installResult.isFailure) {\n                val error = installResult.exceptionOrNull()\n                _uiState.update {\n                    it.copy(\n                        appUpdateMessage = if (error is SecurityException) {\n                            \"Please allow installing apps from SnapLoad in Settings, then tap Install again.\"\n                        } else {\n                            \"Failed to start installer: ${error?.message}\"\n                        }\n                    )\n                }\n            }\n            return\n        }\n\n        _uiState.update { it.copy(isDownloadingAppUpdate = true, appUpdateProgress = 0) }\n\n        viewModelScope.launch {\n            val downloadResult = mgr.downloadApk(apkUrl) { percent ->\n                _uiState.update { it.copy(appUpdateProgress = percent) }\n            }\n\n            _uiState.update { it.copy(isDownloadingAppUpdate = false) }\n\n            if (downloadResult.isSuccess) {\n                val apkFile = downloadResult.getOrThrow()\n                val installResult = mgr.promptInstallApk(apkFile)\n                if (installResult.isFailure) {\n                    val error = installResult.exceptionOrNull()\n                    _uiState.update {\n                        it.copy(\n                            appUpdateMessage = if (error is SecurityException) {\n                                \"Please allow installing apps from SnapLoad in Settings, then tap Install again.\"\n                            } else {\n                                \"Failed to start installer: ${error?.message}\"\n                            }\n                        )\n                    }\n                }\n            } else {\n                _uiState.update {\n                    it.copy(appUpdateMessage = \"Failed to download update: ${downloadResult.exceptionOrNull()?.message}\")\n                }\n            }\n        }\n    }\n\n    fun dismissUpdateDialog() {\n        _uiState.update { it.copy(availableRelease = null) }\n    }\n\n    fun clearAppUpdateMessage() {\n        _uiState.update { it.copy(appUpdateMessage = null) }\n    }\n\n    private fun fetchMetadataForUrl(url: String) {\n        metadataJob?.cancel()\n        metadataJob = viewModelScope.launch {\n            _uiState.update { it.copy(isFetchingMetadata = true, metadataError = null) }\n            val result = repository.fetchMetadata(url)\n            _uiState.update { current ->\n                if (result.isSuccess) {\n                    current.copy(\n                        isFetchingMetadata = false,\n                        metadata = result.getOrNull(),\n                        metadataError = null\n                    )\n                } else {\n                    current.copy(\n                        isFetchingMetadata = false,\n                        metadata = null,\n                        metadataError = \"Failed to load preview (download may still work): ${result.exceptionOrNull()?.message}\"\n                    )\n                }\n            }\n        }\n    }\n}\n
+        metadataJob?.cancel()
+        _uiState.update {
+            it.copy(
+                urlInput = "",
+                detectedPlatform = LinkParser.Platform.UNKNOWN,
+                metadata = null,
+                metadataError = null
+            )
+        }
+        DownloadService.resetState()
+    }
+
+    fun startDownload(context: Context) {
+        val url = LinkParser.extractUrl(_uiState.value.urlInput) ?: _uiState.value.urlInput.trim()
+        if (url.isBlank()) return
+
+        val title = _uiState.value.metadata?.title
+            ?: "SnapLoad_${System.currentTimeMillis()}"
+        val config = _uiState.value.downloadConfig
+
+        DownloadService.startDownload(context, url, config, title)
+    }
+
+    fun cancelDownload(context: Context) {
+        DownloadService.cancelDownload(context)
+    }
+
+    fun resetDownloadState() {
+        DownloadService.resetState()
+    }
+
+    fun updateEngine() {
+        if (_uiState.value.isUpdatingEngine) return
+        _uiState.update { it.copy(isUpdatingEngine = true, engineUpdateMessage = null) }
+        viewModelScope.launch {
+            val result = repository.updateEngine()
+            _uiState.update {
+                it.copy(
+                    isUpdatingEngine = false,
+                    engineUpdateMessage = result.getOrNull() ?: "Error: ${result.exceptionOrNull()?.message}",
+                    engineVersion = repository.getEngineVersion()
+                )
+            }
+        }
+    }
+
+    fun clearEngineUpdateMessage() {
+        _uiState.update { it.copy(engineUpdateMessage = null) }
+    }
+
+    fun setLanguage(langCode: String) {
+        preferences?.selectedLanguage = langCode
+        _uiState.update { it.copy(currentLanguage = langCode) }
+    }
+
+    fun setAutoUpdateEngine(enabled: Boolean) {
+        preferences?.autoUpdateEngine = enabled
+        _uiState.update { it.copy(autoUpdateEngine = enabled) }
+    }
+
+    fun setAutoUpdateApp(enabled: Boolean) {
+        preferences?.autoUpdateApp = enabled
+        _uiState.update { it.copy(autoUpdateApp = enabled) }
+    }
+
+    fun checkForAppUpdates(manual: Boolean = true) {
+        val mgr = updateManager ?: return
+        if (_uiState.value.isCheckingAppUpdate) return
+
+        _uiState.update { it.copy(isCheckingAppUpdate = true, appUpdateMessage = null) }
+        viewModelScope.launch {
+            val result = mgr.checkForUpdates(force = true)
+            _uiState.update { current ->
+                when (result) {
+                    is UpdateCheckResult.UpdateAvailable -> {
+                        current.copy(
+                            isCheckingAppUpdate = false,
+                            availableRelease = result.releaseInfo,
+                            appUpdateMessage = null
+                        )
+                    }
+                    is UpdateCheckResult.UpToDate -> {
+                        current.copy(
+                            isCheckingAppUpdate = false,
+                            availableRelease = null,
+                            appUpdateMessage = if (manual) "SnapLoad is up to date (${result.currentVersion})" else null
+                        )
+                    }
+                    is UpdateCheckResult.Error -> {
+                        current.copy(
+                            isCheckingAppUpdate = false,
+                            availableRelease = null,
+                            appUpdateMessage = if (manual) "Update check failed: ${result.message}" else null
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun downloadAndInstallUpdate(releaseInfo: ReleaseInfo) {
+        val mgr = updateManager ?: return
+        val apkUrl = releaseInfo.apkDownloadUrl ?: return
+
+        val cachedApk = mgr.getDownloadedUpdateApk()
+        if (cachedApk != null) {
+            val installResult = mgr.promptInstallApk(cachedApk)
+            if (installResult.isFailure) {
+                val error = installResult.exceptionOrNull()
+                _uiState.update {
+                    it.copy(
+                        appUpdateMessage = if (error is SecurityException) {
+                            "Please allow installing apps from SnapLoad in Settings, then tap Install again."
+                        } else {
+                            "Failed to start installer: ${error?.message}"
+                        }
+                    )
+                }
+            }
+            return
+        }
+
+        _uiState.update { it.copy(isDownloadingAppUpdate = true, appUpdateProgress = 0) }
+
+        viewModelScope.launch {
+            val downloadResult = mgr.downloadApk(apkUrl) { percent ->
+                _uiState.update { it.copy(appUpdateProgress = percent) }
+            }
+
+            _uiState.update { it.copy(isDownloadingAppUpdate = false) }
+
+            if (downloadResult.isSuccess) {
+                val apkFile = downloadResult.getOrThrow()
+                val installResult = mgr.promptInstallApk(apkFile)
+                if (installResult.isFailure) {
+                    val error = installResult.exceptionOrNull()
+                    _uiState.update {
+                        it.copy(
+                            appUpdateMessage = if (error is SecurityException) {
+                                "Please allow installing apps from SnapLoad in Settings, then tap Install again."
+                            } else {
+                                "Failed to start installer: ${error?.message}"
+                            }
+                        )
+                    }
+                }
+            } else {
+                _uiState.update {
+                    it.copy(appUpdateMessage = "Failed to download update: ${downloadResult.exceptionOrNull()?.message}")
+                }
+            }
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        _uiState.update { it.copy(availableRelease = null) }
+    }
+
+    fun clearAppUpdateMessage() {
+        _uiState.update { it.copy(appUpdateMessage = null) }
+    }
+
+    private fun fetchMetadataForUrl(url: String) {
+        metadataJob?.cancel()
+        metadataJob = viewModelScope.launch {
+            _uiState.update { it.copy(isFetchingMetadata = true, metadataError = null) }
+            val result = repository.fetchMetadata(url)
+            _uiState.update { current ->
+                if (result.isSuccess) {
+                    current.copy(
+                        isFetchingMetadata = false,
+                        metadata = result.getOrNull(),
+                        metadataError = null
+                    )
+                } else {
+                    current.copy(
+                        isFetchingMetadata = false,
+                        metadata = null,
+                        metadataError = "Failed to load preview (download may still work): ${result.exceptionOrNull()?.message}"
+                    )
+                }
+            }
+        }
+    }
+}
