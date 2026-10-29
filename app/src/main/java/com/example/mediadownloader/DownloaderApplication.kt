@@ -30,12 +30,14 @@ class DownloaderApplication : Application() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = getString(R.string.notification_channel_name)
+            val descriptionText = getString(R.string.notification_channel_desc)
             val channel = NotificationChannel(
                 DOWNLOAD_CHANNEL_ID,
-                "Pobieranie multimediów",
+                name,
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Informacje o bieżącym postępie pobierania i zapisywania plików"
+                description = descriptionText
                 setShowBadge(false)
             }
             val notificationManager = getSystemService(NotificationManager::class.java)

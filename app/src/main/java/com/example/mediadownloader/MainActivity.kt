@@ -13,13 +13,20 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.mediadownloader.data.DefaultDownloadRepository
 import com.example.mediadownloader.theme.MediaDownloaderTheme
 import com.example.mediadownloader.ui.main.MainScreenViewModel
+import com.example.mediadownloader.util.LocaleHelper
 
 class MainActivity : ComponentActivity() {
 
@@ -28,7 +35,7 @@ class MainActivity : ComponentActivity() {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val repository = DefaultDownloadRepository(applicationContext)
-                return MainScreenViewModel(repository) as T
+                return MainScreenViewModel(repository, applicationContext) as T
             }
         }
     }
@@ -46,12 +53,25 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
 
         setContent {
-            MediaDownloaderTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    MainNavigation(viewModel = viewModel)
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val localizedContext = remember(uiState.currentLanguage) {
+                LocaleHelper.createLocalizedContext(this@MainActivity, uiState.currentLanguage)
+            }
+            val localizedConfiguration = remember(uiState.currentLanguage) {
+                LocaleHelper.getLocalizedConfiguration(resources.configuration, uiState.currentLanguage)
+            }
+
+            CompositionLocalProvider(
+                LocalContext provides localizedContext,
+                LocalConfiguration provides localizedConfiguration
+            ) {
+                MediaDownloaderTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        MainNavigation(viewModel = viewModel)
+                    }
                 }
             }
         }
