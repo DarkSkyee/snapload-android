@@ -22,6 +22,9 @@ import com.example.mediadownloader.model.DownloadConfiguration
 import com.example.mediadownloader.model.DownloadFormat
 import com.example.mediadownloader.model.DownloadUiState
 import com.example.mediadownloader.model.MediaType
+import com.example.mediadownloader.model.PlaylistItem
+import com.example.mediadownloader.model.PlaylistItemStatus
+import com.example.mediadownloader.model.PlaylistMetadata
 import com.example.mediadownloader.model.VideoFormat
 import com.example.mediadownloader.model.VideoQuality
 import com.example.mediadownloader.util.MediaStoreSaver
@@ -31,6 +34,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -40,6 +44,7 @@ class DownloadService : Service() {
         private const val TAG = "DownloadService"
 
         const val ACTION_START_DOWNLOAD = "com.example.mediadownloader.action.START_DOWNLOAD"
+        const val ACTION_START_PLAYLIST_DOWNLOAD = "com.example.mediadownloader.action.START_PLAYLIST_DOWNLOAD"
         const val ACTION_CANCEL_DOWNLOAD = "com.example.mediadownloader.action.CANCEL_DOWNLOAD"
 
         const val EXTRA_URL = "extra_url"
@@ -50,6 +55,9 @@ class DownloadService : Service() {
         const val EXTRA_VIDEO_QUALITY = "extra_video_quality"
         const val EXTRA_AUDIO_FORMAT = "extra_audio_format"
         const val EXTRA_AUDIO_QUALITY = "extra_audio_quality"
+
+        // In-memory holder for playlist payload to bypass Intent size limits
+        var pendingPlaylistToDownload: PlaylistMetadata? = null
 
         private val _downloadState = MutableStateFlow<DownloadUiState>(DownloadUiState.Idle)
         val downloadState: StateFlow<DownloadUiState> = _downloadState.asStateFlow()
@@ -70,6 +78,25 @@ class DownloadService : Service() {
                 putExtra(EXTRA_AUDIO_FORMAT, config.audioFormat.name)
                 putExtra(EXTRA_AUDIO_QUALITY, config.audioQuality.name)
             }
+            startServiceCompat(context, intent)
+        }
+
+        fun startPlaylistDownload(context: Context, playlist: PlaylistMetadata, config: DownloadConfiguration) {
+            pendingPlaylistToDownload = playlist
+            val intent = Intent(context, DownloadService::class.java).apply {
+                action = ACTION_START_PLAYLIST_DOWNLOAD
+                putExtra(EXTRA_TITLE, playlist.title)
+                putExtra(EXTRA_FORMAT, config.asDownloadFormat.name)
+                putExtra(EXTRA_MEDIA_TYPE, config.mediaType.name)
+                putExtra(EXTRA_VIDEO_FORMAT, config.videoFormat.name)
+                putExtra(EXTRA_VIDEO_QUALITY, config.videoQuality.name)
+                putExtra(EXTRA_AUDIO_FORMAT, config.audioFormat.name)
+                putExtra(EXTRA_AUDIO_QUALITY, config.audioQuality.name)
+            }
+            startServiceCompat(context, intent)
+        }
+
+        private fun startServiceCompat(context: Context, intent: Intent) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
@@ -104,30 +131,21 @@ class DownloadService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val config = extractConfigFromIntent(intent)
+        val title = intent?.getStringExtra(EXTRA_TITLE) ?: "SnapLoad Download"
+
         when (intent?.action) {
             ACTION_START_DOWNLOAD -> {
                 val url = intent.getStringExtra(EXTRA_URL) ?: return START_NOT_STICKY
-                val title = intent.getStringExtra(EXTRA_TITLE) ?: "SnapLoad Download"
-
-                val mediaType = intent.getStringExtra(EXTRA_MEDIA_TYPE)?.let { runCatching { MediaType.valueOf(it) }.getOrNull() }
-                    ?: MediaType.VIDEO
-                val videoFormat = intent.getStringExtra(EXTRA_VIDEO_FORMAT)?.let { runCatching { VideoFormat.valueOf(it) }.getOrNull() }
-                    ?: VideoFormat.MP4
-                val videoQuality = intent.getStringExtra(EXTRA_VIDEO_QUALITY)?.let { runCatching { VideoQuality.valueOf(it) }.getOrNull() }
-                    ?: VideoQuality.BEST
-                val audioFormat = intent.getStringExtra(EXTRA_AUDIO_FORMAT)?.let { runCatching { AudioFormat.valueOf(it) }.getOrNull() }
-                    ?: AudioFormat.MP3
-                val audioQuality = intent.getStringExtra(EXTRA_AUDIO_QUALITY)?.let { runCatching { AudioQuality.valueOf(it) }.getOrNull() }
-                    ?: AudioQuality.BEST
-
-                val config = DownloadConfiguration(
-                    mediaType = mediaType,
-                    videoFormat = videoFormat,
-                    videoQuality = videoQuality,
-                    audioFormat = audioFormat,
-                    audioQuality = audioQuality
-                )
-                handleStartDownload(url, config, title)
+                handleStartSingleDownload(url, config, title)
+            }
+            ACTION_START_PLAYLIST_DOWNLOAD -> {
+                val playlist = pendingPlaylistToDownload
+                if (playlist != null && playlist.items.isNotEmpty()) {
+                    handleStartPlaylistDownload(playlist, config)
+                } else {
+                    stopSelf()
+                }
             }
             ACTION_CANCEL_DOWNLOAD -> {
                 handleCancelDownload()
@@ -136,7 +154,28 @@ class DownloadService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun handleStartDownload(url: String, config: DownloadConfiguration, initialTitle: String) {
+    private fun extractConfigFromIntent(intent: Intent?): DownloadConfiguration {
+        val mediaType = intent?.getStringExtra(EXTRA_MEDIA_TYPE)?.let { runCatching { MediaType.valueOf(it) }.getOrNull() }
+            ?: MediaType.VIDEO
+        val videoFormat = intent?.getStringExtra(EXTRA_VIDEO_FORMAT)?.let { runCatching { VideoFormat.valueOf(it) }.getOrNull() }
+            ?: VideoFormat.MP4
+        val videoQuality = intent?.getStringExtra(EXTRA_VIDEO_QUALITY)?.let { runCatching { VideoQuality.valueOf(it) }.getOrNull() }
+            ?: VideoQuality.BEST
+        val audioFormat = intent?.getStringExtra(EXTRA_AUDIO_FORMAT)?.let { runCatching { AudioFormat.valueOf(it) }.getOrNull() }
+            ?: AudioFormat.MP3
+        val audioQuality = intent?.getStringExtra(EXTRA_AUDIO_QUALITY)?.let { runCatching { AudioQuality.valueOf(it) }.getOrNull() }
+            ?: AudioQuality.BEST
+
+        return DownloadConfiguration(
+            mediaType = mediaType,
+            videoFormat = videoFormat,
+            videoQuality = videoQuality,
+            audioFormat = audioFormat,
+            audioQuality = audioQuality
+        )
+    }
+
+    private fun handleStartSingleDownload(url: String, config: DownloadConfiguration, initialTitle: String) {
         val downloadId = "dl_" + UUID.randomUUID().toString().substring(0, 8)
         currentDownloadId = downloadId
 
@@ -146,24 +185,13 @@ class DownloadService : Service() {
             progress = 0,
             isIndeterminate = true
         )
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ServiceCompat.startForeground(
-                this,
-                DownloaderApplication.NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            startForeground(DownloaderApplication.NOTIFICATION_ID, notification)
-        }
+        startServiceForeground(notification)
 
         _downloadState.value = DownloadUiState.Downloading(0f, "Initializing...", 0)
 
         downloadJob = serviceScope.launch(Dispatchers.IO) {
             try {
-                // 1. Download stream using repository
-                val downloadResult = repository.downloadMedia(
+                val downloadResult = repository.downloadMediaDetailed(
                     url = url,
                     config = config,
                     downloadId = downloadId
@@ -178,9 +206,10 @@ class DownloadService : Service() {
                     return@launch
                 }
 
-                val tempFile = downloadResult.getOrThrow()
+                val detailedResult = downloadResult.getOrThrow()
+                val tempFile = detailedResult.file
+                val effectiveConfig = detailedResult.effectiveConfig
 
-                // 2. Save directly to Android MediaStore
                 _downloadState.value = DownloadUiState.SavingToGallery
                 updateNotificationIndeterminate(initialTitle, getString(R.string.notification_saving))
 
@@ -188,11 +217,17 @@ class DownloadService : Service() {
                     context = applicationContext,
                     tempFile = tempFile,
                     title = initialTitle,
-                    config = config
+                    config = effectiveConfig
                 )
 
                 if (savedUri != null) {
-                    _downloadState.value = DownloadUiState.Success(initialTitle, savedUri, config.asDownloadFormat, config)
+                    _downloadState.value = DownloadUiState.Success(
+                        title = initialTitle,
+                        uri = savedUri,
+                        format = effectiveConfig.asDownloadFormat,
+                        config = effectiveConfig,
+                        fallbackNotice = detailedResult.fallbackNotice
+                    )
                 } else {
                     val errorMsg = getString(R.string.notification_failed)
                     _downloadState.value = DownloadUiState.Error(errorMsg)
@@ -203,10 +238,150 @@ class DownloadService : Service() {
                 val errorMsg = e.message ?: "Unexpected error occurred"
                 _downloadState.value = DownloadUiState.Error(errorMsg)
             } finally {
-                // Ensure ongoing download notification is completely dismissed immediately upon 100% / completion
                 dismissDownloadNotification()
                 stopSelf()
             }
+        }
+    }
+
+    private fun handleStartPlaylistDownload(playlist: PlaylistMetadata, config: DownloadConfiguration) {
+        val totalCount = playlist.items.size
+        val currentItems = playlist.items.toMutableList()
+
+        val notification = createNotification(
+            title = playlist.title,
+            contentText = getString(R.string.notification_starting),
+            progress = 0,
+            isIndeterminate = false
+        )
+        startServiceForeground(notification)
+
+        _downloadState.value = DownloadUiState.PlaylistDownloading(
+            playlistTitle = playlist.title,
+            currentIndex = 1,
+            totalCount = totalCount,
+            currentItemTitle = currentItems.firstOrNull()?.title ?: "",
+            currentItemProgress = 0f,
+            overallProgress = 0f,
+            items = currentItems
+        )
+
+        downloadJob = serviceScope.launch(Dispatchers.IO) {
+            var successCount = 0
+            var failedCount = 0
+            var fallbackOccurredNotice: String? = null
+
+            try {
+                for (i in currentItems.indices) {
+                    if (!isActive) break
+
+                    val item = currentItems[i]
+                    val downloadId = "pl_" + UUID.randomUUID().toString().substring(0, 8)
+                    currentDownloadId = downloadId
+
+                    currentItems[i] = item.copy(status = PlaylistItemStatus.DOWNLOADING, progress = 0f)
+                    val overallProgress = (i.toFloat() / totalCount.toFloat()) * 100f
+
+                    _downloadState.value = DownloadUiState.PlaylistDownloading(
+                        playlistTitle = playlist.title,
+                        currentIndex = i + 1,
+                        totalCount = totalCount,
+                        currentItemTitle = item.title,
+                        currentItemProgress = 0f,
+                        overallProgress = overallProgress,
+                        items = currentItems.toList()
+                    )
+
+                    val statusMsg = getString(R.string.playlist_downloading_progress, i + 1, totalCount, item.title)
+                    updateNotificationProgress(playlist.title, statusMsg, overallProgress.toInt())
+
+                    val downloadResult = repository.downloadMediaDetailed(
+                        url = item.sourceUrl,
+                        config = config,
+                        downloadId = downloadId
+                    ) { itemProg, _, statusText ->
+                        val currentOverall = (((i.toFloat() + (itemProg / 100f)) / totalCount.toFloat()) * 100f).coerceIn(0f, 100f)
+                        currentItems[i] = currentItems[i].copy(progress = itemProg)
+                        _downloadState.value = DownloadUiState.PlaylistDownloading(
+                            playlistTitle = playlist.title,
+                            currentIndex = i + 1,
+                            totalCount = totalCount,
+                            currentItemTitle = item.title,
+                            currentItemProgress = itemProg,
+                            overallProgress = currentOverall,
+                            speed = statusText,
+                            items = currentItems.toList()
+                        )
+                        updateNotificationProgress(playlist.title, "${(i + 1)}/$totalCount • $statusText", currentOverall.toInt())
+                    }
+
+                    if (downloadResult.isSuccess) {
+                        val detailedResult = downloadResult.getOrThrow()
+                        if (detailedResult.fallbackNotice != null) {
+                            fallbackOccurredNotice = detailedResult.fallbackNotice
+                        }
+                        val tempFile = detailedResult.file
+                        val savedUri = MediaStoreSaver.saveToGallery(
+                            context = applicationContext,
+                            tempFile = tempFile,
+                            title = item.title,
+                            config = detailedResult.effectiveConfig
+                        )
+                        if (savedUri != null) {
+                            successCount++
+                            currentItems[i] = currentItems[i].copy(status = PlaylistItemStatus.COMPLETED, progress = 100f)
+                        } else {
+                            failedCount++
+                            currentItems[i] = currentItems[i].copy(status = PlaylistItemStatus.FAILED, error = "Failed to save")
+                        }
+                    } else {
+                        failedCount++
+                        val err = downloadResult.exceptionOrNull()?.message ?: "Failed"
+                        currentItems[i] = currentItems[i].copy(status = PlaylistItemStatus.FAILED, error = err)
+                    }
+
+                    _downloadState.value = DownloadUiState.PlaylistDownloading(
+                        playlistTitle = playlist.title,
+                        currentIndex = (i + 1).coerceAtMost(totalCount),
+                        totalCount = totalCount,
+                        currentItemTitle = item.title,
+                        currentItemProgress = 100f,
+                        overallProgress = (((i + 1).toFloat() / totalCount.toFloat()) * 100f),
+                        items = currentItems.toList()
+                    )
+                }
+
+                if (isActive) {
+                    _downloadState.value = DownloadUiState.PlaylistSuccess(
+                        playlistTitle = playlist.title,
+                        totalCount = totalCount,
+                        successCount = successCount,
+                        failedCount = failedCount,
+                        items = currentItems.toList(),
+                        fallbackNotice = fallbackOccurredNotice
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Playlist download failed: ${e.message}", e)
+                _downloadState.value = DownloadUiState.Error(e.message ?: "Playlist download interrupted")
+            } finally {
+                pendingPlaylistToDownload = null
+                dismissDownloadNotification()
+                stopSelf()
+            }
+        }
+    }
+
+    private fun startServiceForeground(notification: android.app.Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceCompat.startForeground(
+                this,
+                DownloaderApplication.NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        } else {
+            startForeground(DownloaderApplication.NOTIFICATION_ID, notification)
         }
     }
 
@@ -217,6 +392,7 @@ class DownloadService : Service() {
                 repository.cancelDownload(id)
             }
         }
+        pendingPlaylistToDownload = null
         _downloadState.value = DownloadUiState.Idle
         dismissDownloadNotification()
         stopSelf()
