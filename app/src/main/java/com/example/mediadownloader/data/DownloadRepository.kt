@@ -266,6 +266,8 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                 isAudioOnlySource = true
                 val spTrack = SpotifyHelper.fetchTrack(url)
                 targetUrl = spTrack?.searchQuery ?: "ytsearch1:$url audio"
+            } else if (platform == LinkParser.Platform.YOUTUBE_MUSIC && !url.contains("watch")) {
+                isAudioOnlySource = true
             }
 
             // Fallback requirement:
@@ -321,8 +323,14 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                 }
             } catch (e: Exception) {
                 // Secondary fallback check: If video download failed due to no matching video streams
-                if (effectiveConfig.mediaType == MediaType.VIDEO && (e.message?.contains("format", ignoreCase = true) == true || e.message?.contains("Requested format", ignoreCase = true) == true)) {
-                    Log.w(TAG, "Video format failed. Retrying with MP3 fallback: ${e.message}")
+                val msg = e.message.orEmpty()
+                if (effectiveConfig.mediaType == MediaType.VIDEO && (
+                    msg.contains("format", ignoreCase = true) ||
+                    msg.contains("Requested format", ignoreCase = true) ||
+                    msg.contains("audio only", ignoreCase = true) ||
+                    msg.contains("no video", ignoreCase = true)
+                )) {
+                    Log.w(TAG, "Video format unavailable. Retrying with MP3 fallback: ${e.message}")
                     executionFailed = true
                 } else {
                     throw e
@@ -336,6 +344,14 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                     audioQuality = AudioQuality.BEST
                 )
                 fallbackNotice = context.getString(R.string.fallback_audio_only_to_mp3)
+
+                // Ensure FFmpeg is installed before retrying with MP3 conversion
+                if (!FFmpegEngineManager.isInstalled(context)) {
+                    onProgress(5f, 0L, "Preparing media converter...")
+                    FFmpegEngineManager.ensureFFmpegInstalled(context) { pct ->
+                        onProgress(pct.toFloat().coerceIn(0f, 90f), 0L, "Setting up converter ($pct%)...")
+                    }
+                }
 
                 val retryRequest = YoutubeDLRequest(targetUrl).apply {
                     addOption("-o", outputTemplate)
