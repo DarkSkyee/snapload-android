@@ -45,6 +45,7 @@ data class MainUiState(
     val currentLanguage: String = "en",
     val autoUpdateEngine: Boolean = true,
     val autoUpdateApp: Boolean = true,
+    val quickDownloadOnShare: Boolean = false,
     val recentDownloads: List<DownloadedItem> = emptyList()
 )
 
@@ -62,7 +63,8 @@ class MainScreenViewModel(
             appVersion = updateManager?.getCurrentVersionName() ?: "1.0",
             currentLanguage = preferences?.selectedLanguage ?: "en",
             autoUpdateEngine = preferences?.autoUpdateEngine ?: true,
-            autoUpdateApp = preferences?.autoUpdateApp ?: true
+            autoUpdateApp = preferences?.autoUpdateApp ?: true,
+            quickDownloadOnShare = preferences?.quickDownloadOnShare ?: false
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -222,6 +224,11 @@ class MainScreenViewModel(
     fun setAutoUpdateApp(enabled: Boolean) {
         preferences?.autoUpdateApp = enabled
         _uiState.update { it.copy(autoUpdateApp = enabled) }
+    }
+
+    fun setQuickDownloadOnShare(enabled: Boolean) {
+        preferences?.quickDownloadOnShare = enabled
+        _uiState.update { it.copy(quickDownloadOnShare = enabled) }
     }
 
     fun updateEngine() {

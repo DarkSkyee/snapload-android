@@ -105,20 +105,38 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIncomingIntent(intent: Intent?) {
         if (intent == null) return
-        val sharedText = when (intent.action) {
-            Intent.ACTION_SEND -> {
-                intent.getStringExtra(Intent.EXTRA_TEXT)
-                    ?: intent.getStringExtra(Intent.EXTRA_SUBJECT)
-                    ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
-                    ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri?.toString()
+        val extractedUrl = com.example.mediadownloader.util.ShareIntentExtractor.extractUrlFromIntent(intent)
+        val rawText = com.example.mediadownloader.util.ShareIntentExtractor.extractRawSharedText(intent)
+        val targetText = extractedUrl ?: rawText
+
+        if (!targetText.isNullOrBlank()) {
+            val prefs = com.example.mediadownloader.data.AppPreferences(this)
+            if (prefs.quickDownloadOnShare && intent.action == Intent.ACTION_SEND && !extractedUrl.isNullOrBlank()) {
+                val wasActive = com.example.mediadownloader.service.DownloadService.isDownloadingActive()
+                val started = com.example.mediadownloader.service.DownloadService.startDownload(
+                    context = this,
+                    url = extractedUrl,
+                    config = com.example.mediadownloader.model.DownloadConfiguration(),
+                    title = getString(R.string.quick_download_default_title)
+                )
+                val toastMsg = if (started) {
+                    if (wasActive) {
+                        getString(R.string.quick_download_queued)
+                    } else {
+                        getString(R.string.quick_download_started)
+                    }
+                } else {
+                    getString(R.string.quick_download_failed_to_start)
+                }
+                android.widget.Toast.makeText(
+                    applicationContext,
+                    toastMsg,
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+                finish()
+                return
             }
-            Intent.ACTION_VIEW -> {
-                intent.dataString
-            }
-            else -> null
-        }
-        if (!sharedText.isNullOrBlank()) {
-            viewModel.handleSharedText(sharedText)
+            viewModel.handleSharedText(targetText)
         }
     }
 

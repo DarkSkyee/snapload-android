@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Refresh
@@ -60,6 +61,7 @@ fun AppMenuBottomSheet(
     currentLanguage: String,
     autoUpdateEngine: Boolean,
     autoUpdateApp: Boolean,
+    quickDownloadOnShare: Boolean,
     engineVersion: String,
     appVersion: String,
     isUpdatingEngine: Boolean,
@@ -67,6 +69,7 @@ fun AppMenuBottomSheet(
     onLanguageChange: (String) -> Unit,
     onAutoUpdateEngineChange: (Boolean) -> Unit,
     onAutoUpdateAppChange: (Boolean) -> Unit,
+    onQuickDownloadOnShareChange: (Boolean) -> Unit,
     onCheckAppUpdateClick: () -> Unit,
     onUpdateEngineClick: () -> Unit,
     onDismissRequest: () -> Unit
@@ -165,6 +168,21 @@ fun AppMenuBottomSheet(
                         description = stringResource(R.string.settings_auto_app_desc),
                         checked = autoUpdateApp,
                         onCheckedChange = onAutoUpdateAppChange
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    // Quick Download on Share
+                    SettingsSectionHeader(
+                        icon = Icons.Default.Download,
+                        title = stringResource(R.string.settings_quick_share_title)
+                    )
+
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_quick_share_download),
+                        description = stringResource(R.string.settings_quick_share_download_desc),
+                        checked = quickDownloadOnShare,
+                        onCheckedChange = onQuickDownloadOnShareChange
                     )
 
                     // 3. Manual Update Actions
