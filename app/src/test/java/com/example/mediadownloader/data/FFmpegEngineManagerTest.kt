@@ -387,4 +387,235 @@ class FFmpegEngineManagerTest {
 
         assertTrue(FFmpegEngineManager.isInstalled(mockContext))
     }
+
+    @Test
+    fun unzip_safelyOverwritesExistingFilesWithoutFailing() {
+        val destDir = tempFolder.newFolder("unzip_dest")
+        val existingFile = File(destDir, "test.txt").apply {
+            writeText("old content")
+        }
+
+        // Create a test zip archive with updated test.txt
+        val zipFile = tempFolder.newFile("test.zip")
+        java.util.zip.ZipOutputStream(java.io.FileOutputStream(zipFile)).use { zos ->
+            zos.putNextEntry(java.util.zip.ZipEntry("test.txt"))
+            zos.write("new content".toByteArray())
+            zos.closeEntry()
+        }
+
+        FFmpegEngineManager.unzip(zipFile, destDir)
+        assertEquals("new content", existingFile.readText())
+    }
+
+    @Test
+    fun ensureFFmpegInstalled_extractsBundledArchiveFromNativeLibraryDir() = kotlinx.coroutines.runBlocking {
+        val nativeDir = tempFolder.newFolder("native_bundled_test")
+        File(nativeDir, "libffmpeg.so").apply { writeBytes(elfHeader + ByteArray(100)) }
+        File(nativeDir, "libffprobe.so").apply { writeBytes(elfHeader + ByteArray(100)) }
+
+        // Create bundled libffmpeg.zip.so with required media libraries
+        val bundledZip = File(nativeDir, "libffmpeg.zip.so")
+        java.util.zip.ZipOutputStream(java.io.FileOutputStream(bundledZip)).use { zos ->
+            val keys = listOf(
+                "libavcodec", "libavformat", "libavutil", "libswscale",
+                "libswresample", "libavfilter", "libavdevice", "libpostproc"
+            )
+            for (k in keys) {
+                zos.putNextEntry(java.util.zip.ZipEntry("usr/lib/${k}.so.1.0"))
+                zos.write(elfHeader + ByteArray(20000))
+                zos.closeEntry()
+            }
+            // Pad zip to exceed 1MB threshold
+            zos.putNextEntry(java.util.zip.ZipEntry("usr/lib/padding.bin"))
+            zos.write(ByteArray(1024 * 1024 + 10))
+            zos.closeEntry()
+        }
+
+        val appInfo = ApplicationInfo().apply {
+            nativeLibraryDir = nativeDir.absolutePath
+        }
+        val mockContext = object : android.content.ContextWrapper(null) {
+            override fun getApplicationInfo(): ApplicationInfo = appInfo
+            override fun getApplicationContext(): Context = this
+            override fun getNoBackupFilesDir(): File = tempFolder.root
+            override fun getCacheDir(): File = tempFolder.root
+        }
+
+        val success = FFmpegEngineManager.ensureFFmpegInstalled(mockContext)
+        assertTrue("Expected ensureFFmpegInstalled to succeed with bundled archive", success)
+        assertTrue("Expected isInstalled to return true after extracting bundled archive", FFmpegEngineManager.isInstalled(mockContext))
+    }
+
+    @Test
+    fun repairSymlinksAndBinaries_overwritesBrokenSymlinksInBinDir() {
+        val nativeDir = tempFolder.newFolder("native_broken_symlink_test")
+        val realFfmpeg = File(nativeDir, "libffmpeg.so").apply { writeBytes(elfHeader + ByteArray(100)) }
+        val realFfprobe = File(nativeDir, "libffprobe.so").apply { writeBytes(elfHeader + ByteArray(100)) }
+
+        val ytBase = File(tempFolder.root, "youtubedl-android")
+        val packagesDir = File(ytBase, "packages")
+        val ffmpegDir = File(packagesDir, "ffmpeg").apply { mkdirs() }
+        val binDir = File(ffmpegDir, "bin").apply { mkdirs() }
+
+        // Create broken symlink in binDir pointing to a dead file
+        val deadTarget = File(tempFolder.root, "dead_target.so")
+        val binFfmpeg = File(binDir, "ffmpeg")
+        var symlinkCreated = false
+        try {
+            java.nio.file.Files.createSymbolicLink(binFfmpeg.toPath(), deadTarget.toPath())
+            symlinkCreated = true
+        } catch (_: Throwable) {}
+
+        if (symlinkCreated) {
+            // Confirm it is indeed a broken symlink
+            assertFalse(binFfmpeg.exists())
+            assertTrue(java.nio.file.Files.isSymbolicLink(binFfmpeg.toPath()))
+
+            val appInfo = ApplicationInfo().apply {
+                nativeLibraryDir = nativeDir.absolutePath
+            }
+            val mockContext = object : android.content.ContextWrapper(null) {
+                override fun getApplicationInfo(): ApplicationInfo = appInfo
+                override fun getApplicationContext(): Context = this
+                override fun getNoBackupFilesDir(): File = tempFolder.root
+            }
+
+            FFmpegEngineManager.repairSymlinksAndBinaries(mockContext)
+            assertTrue("ffmpeg in binDir must exist and not be broken after repair", binFfmpeg.exists())
+            assertEquals(realFfmpeg.length(), binFfmpeg.length())
+        }
+    }
+
+    @Test
+    fun ensureFFmpegInstalled_fallsBackToApkSourceDir_whenNativeLibraryDirMissingBundle() = kotlinx.coroutines.runBlocking {
+        val apkDir = tempFolder.newFolder("apk_dir")
+        val fakeApk = File(apkDir, "base.apk")
+        java.util.zip.ZipOutputStream(java.io.FileOutputStream(fakeApk)).use { zos ->
+            // Package lib/arm64-v8a/libffmpeg.zip.so inside fake APK
+            zos.putNextEntry(java.util.zip.ZipEntry("lib/arm64-v8a/libffmpeg.zip.so"))
+            val innerZipBytes = java.io.ByteArrayOutputStream().also { innerBos ->
+                java.util.zip.ZipOutputStream(innerBos).use { innerZos ->
+                    val keys = listOf(
+                        "libavcodec", "libavformat", "libavutil", "libswscale",
+                        "libswresample", "libavfilter", "libavdevice", "libpostproc"
+                    )
+                    for (k in keys) {
+                        innerZos.putNextEntry(java.util.zip.ZipEntry("usr/lib/${k}.so.1.0"))
+                        innerZos.write(elfHeader + ByteArray(20000))
+                        innerZos.closeEntry()
+                    }
+                }
+            }.toByteArray()
+            zos.write(innerZipBytes)
+            zos.closeEntry()
+
+            // Package lib/arm64-v8a/libffmpeg.so inside fake APK
+            zos.putNextEntry(java.util.zip.ZipEntry("lib/arm64-v8a/libffmpeg.so"))
+            zos.write(elfHeader + ByteArray(100))
+            zos.closeEntry()
+
+            // Package lib/arm64-v8a/libffprobe.so inside fake APK
+            zos.putNextEntry(java.util.zip.ZipEntry("lib/arm64-v8a/libffprobe.so"))
+            zos.write(elfHeader + ByteArray(100))
+            zos.closeEntry()
+        }
+
+        // nativeLibraryDir does NOT have libffmpeg.zip.so (simulating devices where OS didn't extract zip.so)
+        val emptyNativeDir = tempFolder.newFolder("empty_native_dir")
+        val appInfo = ApplicationInfo().apply {
+            sourceDir = fakeApk.absolutePath
+            nativeLibraryDir = emptyNativeDir.absolutePath
+        }
+        val mockContext = object : android.content.ContextWrapper(null) {
+            override fun getApplicationInfo(): ApplicationInfo = appInfo
+            override fun getApplicationContext(): Context = this
+            override fun getNoBackupFilesDir(): File = tempFolder.root
+            override fun getCacheDir(): File = tempFolder.root
+        }
+
+        val success = FFmpegEngineManager.ensureFFmpegInstalled(mockContext)
+        assertTrue("Expected ensureFFmpegInstalled to extract from APK sourceDir", success)
+        assertTrue(FFmpegEngineManager.isInstalled(mockContext))
+    }
+
+    @Test
+    fun ensureFFmpegInstalled_recoversFromCorruptedPreviousInstall() = kotlinx.coroutines.runBlocking {
+        val nativeDir = tempFolder.newFolder("native_corrupt_recovery")
+        File(nativeDir, "libffmpeg.so").apply { writeBytes(elfHeader + ByteArray(100)) }
+        File(nativeDir, "libffprobe.so").apply { writeBytes(elfHeader + ByteArray(100)) }
+
+        // Setup corrupted packages/ffmpeg directory simulating an interrupted download/extraction
+        val ytBase = File(tempFolder.root, "youtubedl-android")
+        val packagesDir = File(ytBase, "packages")
+        val ffmpegDir = File(packagesDir, "ffmpeg").apply { mkdirs() }
+        val libDir = File(ffmpegDir, "usr/lib").apply { mkdirs() }
+        File(libDir, "libavcodec.so.61").apply { writeText("non_existent_target.so\n") }
+        File(libDir, "corrupted_garbage.bin").apply { writeBytes(ByteArray(500)) }
+
+        val appInfo = ApplicationInfo().apply {
+            nativeLibraryDir = nativeDir.absolutePath
+        }
+        val mockContext = object : android.content.ContextWrapper(null) {
+            override fun getApplicationInfo(): ApplicationInfo = appInfo
+            override fun getApplicationContext(): Context = this
+            override fun getNoBackupFilesDir(): File = tempFolder.root
+            override fun getCacheDir(): File = tempFolder.root
+        }
+
+        // Must initially fail isInstalled check due to corrupt placeholder
+        assertFalse(FFmpegEngineManager.isInstalled(mockContext))
+
+        // Create bundled zip with valid media libraries
+        val bundledZip = File(nativeDir, "libffmpeg.zip.so")
+        java.util.zip.ZipOutputStream(java.io.FileOutputStream(bundledZip)).use { zos ->
+            val keys = listOf(
+                "libavcodec", "libavformat", "libavutil", "libswscale",
+                "libswresample", "libavfilter", "libavdevice", "libpostproc"
+            )
+            for (k in keys) {
+                zos.putNextEntry(java.util.zip.ZipEntry("usr/lib/${k}.so.1.0"))
+                zos.write(elfHeader + ByteArray(20000))
+                zos.closeEntry()
+            }
+            zos.putNextEntry(java.util.zip.ZipEntry("usr/lib/padding.bin"))
+            zos.write(ByteArray(1024 * 1024 + 10))
+            zos.closeEntry()
+        }
+
+        val success = FFmpegEngineManager.ensureFFmpegInstalled(mockContext)
+        assertTrue("Expected ensureFFmpegInstalled to recover and succeed", success)
+        assertTrue(FFmpegEngineManager.isInstalled(mockContext))
+        assertFalse("Corrupted leftover garbage must be wiped during clean recovery", File(libDir, "corrupted_garbage.bin").exists())
+    }
+
+    @Test
+    fun setupBinaryAlias_replacesStaleOrCorruptDestination() {
+        val testDir = tempFolder.newFolder("alias_test")
+        val sourceFile = File(testDir, "source.so").apply {
+            writeBytes(elfHeader + ByteArray(500))
+        }
+        val destFile = File(testDir, "alias.so").apply {
+            writeBytes(ByteArray(10)) // stale, wrong size
+        }
+
+        FFmpegEngineManager.setupBinaryAlias(sourceFile, destFile)
+        assertTrue(destFile.exists())
+        assertEquals(sourceFile.length(), destFile.length())
+    }
+
+    @Test
+    fun unzip_handlesInputStreamDirectly() {
+        val destDir = tempFolder.newFolder("stream_dest")
+        val bos = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(bos).use { zos ->
+            zos.putNextEntry(java.util.zip.ZipEntry("streamed.txt"))
+            zos.write("hello stream".toByteArray())
+            zos.closeEntry()
+        }
+
+        FFmpegEngineManager.unzip(java.io.ByteArrayInputStream(bos.toByteArray()), destDir)
+        val extracted = File(destDir, "streamed.txt")
+        assertTrue(extracted.exists())
+        assertEquals("hello stream", extracted.readText())
+    }
 }

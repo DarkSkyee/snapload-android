@@ -15,8 +15,8 @@ android {
         applicationId = "com.example.mediadownloader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 14
-        versionName = "3.0.6"
+        versionCode = 15
+        versionName = "3.0.7"
         ndk {
             abiFilters.clear()
             abiFilters.add("arm64-v8a")
@@ -72,7 +72,6 @@ android {
     packaging {
       jniLibs {
         useLegacyPackaging = true
-        excludes += "**/libffmpeg.zip.so"
       }
       resources {
         excludes += "/META-INF/{AL2.0,LGPL2.1}"

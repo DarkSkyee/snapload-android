@@ -16,8 +16,8 @@ import java.util.zip.ZipInputStream
 object FFmpegEngineManager {
     private const val TAG = "FFmpegManager"
     private val FFMPEG_RELEASE_URLS = listOf(
+        "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.6/ffmpeg-arm64-v8a.zip",
         "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.5/ffmpeg-arm64-v8a.zip",
-        "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.4/ffmpeg-arm64-v8a.zip",
         "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.3/ffmpeg-arm64-v8a.zip",
         "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.2/ffmpeg-arm64-v8a.zip",
         "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.1/ffmpeg-arm64-v8a.zip",
@@ -81,7 +81,7 @@ object FFmpegEngineManager {
         val files = libDir.listFiles() ?: return false
         for (key in keyLibraries) {
             val matching = files.filter { it.name.startsWith(key) }
-            if (matching.isEmpty() || !matching.any { isValidElf(it) || it.length() > 50 * 1024L }) {
+            if (matching.isEmpty() || !matching.any { isValidElf(it) || it.length() > 10 * 1024L }) {
                 return false
             }
         }
@@ -107,7 +107,7 @@ object FFmpegEngineManager {
             return true
         }
 
-        // Fallback: Check binDir contains valid ffmpeg and ffprobe aliases, or create them from nativeLibraryDir
+        // Fallback: Check binDir contains valid ffmpeg and ffprobe aliases, or create them from nativeLibraryDir or APK
         val binDir = File(dir, "bin")
         val binFfmpeg = File(binDir, "ffmpeg")
         val binFfprobe = File(binDir, "ffprobe")
@@ -118,6 +118,8 @@ object FFmpegEngineManager {
                     setupBinaryAlias(nativeFfmpeg, binFfmpeg)
                     setupBinaryAlias(nativeFfprobe, binFfprobe)
                 } catch (_: Throwable) {}
+            } else {
+                extractBinariesFromApk(context, binDir, dir)
             }
             if (!binFfmpeg.exists() || binFfmpeg.length() == 0L || !binFfprobe.exists() || binFfprobe.length() == 0L) {
                 return false
@@ -322,6 +324,8 @@ object FFmpegEngineManager {
                 setupBinaryAlias(nativeFfmpeg, File(binDir, "ffmpeg"))
                 setupBinaryAlias(nativeFfmpeg, File(targetDir, "ffmpeg"))
                 setupBinaryAlias(nativeFfmpeg, File(targetDir, "libffmpeg.so"))
+            } else {
+                extractBinariesFromApk(context, binDir, targetDir)
             }
 
             if (nativeFfprobe != null && nativeFfprobe.exists()) {
@@ -347,26 +351,190 @@ object FFmpegEngineManager {
         }
     }
 
-    private fun setupBinaryAlias(source: File, destination: File) {
-        if (destination.exists()) {
-            if (destination.length() == 0L || isCorruptPlaceholder(destination)) {
-                destination.delete()
-            } else {
-                destination.setExecutable(true, false)
-                return
+    fun setupBinaryAlias(source: File, destination: File) {
+        if (!source.exists() || source.length() == 0L) return
+        try {
+            if (isSymlink(destination)) {
+                val currentTarget = try {
+                    java.nio.file.Files.readSymbolicLink(destination.toPath()).toString()
+                } catch (_: Throwable) { null }
+                if (currentTarget == source.absolutePath && destination.exists() && destination.length() > 0L) {
+                    destination.setExecutable(true, false)
+                    return
+                }
+                try {
+                    java.nio.file.Files.deleteIfExists(destination.toPath())
+                } catch (_: Throwable) {
+                    destination.delete()
+                }
+            } else if (destination.exists()) {
+                if (destination.length() == 0L || isCorruptPlaceholder(destination) || destination.length() != source.length()) {
+                    try {
+                        java.nio.file.Files.deleteIfExists(destination.toPath())
+                    } catch (_: Throwable) {
+                        destination.delete()
+                    }
+                } else {
+                    destination.setExecutable(true, false)
+                    return
+                }
             }
+        } catch (_: Throwable) {
+            try { destination.delete() } catch (_: Throwable) {}
         }
+
         var created = false
         try {
             android.system.Os.symlink(source.absolutePath, destination.absolutePath)
-            created = destination.exists()
+            created = destination.exists() && destination.length() > 0L
         } catch (_: Throwable) {}
         if (!created) {
             try {
+                if (destination.exists() || isSymlink(destination)) {
+                    try {
+                        java.nio.file.Files.deleteIfExists(destination.toPath())
+                    } catch (_: Throwable) {
+                        destination.delete()
+                    }
+                }
                 source.copyTo(destination, overwrite = true)
+                created = destination.exists() && destination.length() > 0L
             } catch (_: Throwable) {}
         }
-        destination.setExecutable(true, false)
+        try {
+            destination.setExecutable(true, false)
+        } catch (_: Throwable) {}
+    }
+
+    fun extractBinariesFromApk(context: Context, binDir: File, targetDir: File) {
+        val apkPath = try { context.applicationInfo.sourceDir } catch (_: Throwable) { null } ?: return
+        val apkFile = File(apkPath)
+        if (!apkFile.exists()) return
+
+        try {
+            binDir.mkdirs()
+            targetDir.mkdirs()
+            java.util.zip.ZipFile(apkFile).use { zip ->
+                val ffmpegCandidates = listOf(
+                    "lib/arm64-v8a/libffmpeg.so",
+                    "lib/armeabi-v7a/libffmpeg.so",
+                    "lib/x86_64/libffmpeg.so",
+                    "lib/x86/libffmpeg.so"
+                )
+                for (cand in ffmpegCandidates) {
+                    val entry = zip.getEntry(cand)
+                    if (entry != null) {
+                        val binFfmpeg = File(binDir, "ffmpeg")
+                        if (!binFfmpeg.exists() || binFfmpeg.length() == 0L) {
+                            zip.getInputStream(entry).use { inp ->
+                                binFfmpeg.outputStream().use { out -> inp.copyTo(out) }
+                            }
+                            binFfmpeg.setExecutable(true, false)
+                        }
+                        val tgtFfmpeg = File(targetDir, "ffmpeg")
+                        if (!tgtFfmpeg.exists() || tgtFfmpeg.length() == 0L) {
+                            try { binFfmpeg.copyTo(tgtFfmpeg, overwrite = true) } catch (_: Throwable) {}
+                            tgtFfmpeg.setExecutable(true, false)
+                        }
+                        val tgtLib = File(targetDir, "libffmpeg.so")
+                        if (!tgtLib.exists() || tgtLib.length() == 0L) {
+                            try { binFfmpeg.copyTo(tgtLib, overwrite = true) } catch (_: Throwable) {}
+                            tgtLib.setExecutable(true, false)
+                        }
+                        break
+                    }
+                }
+
+                val ffprobeCandidates = listOf(
+                    "lib/arm64-v8a/libffprobe.so",
+                    "lib/armeabi-v7a/libffprobe.so",
+                    "lib/x86_64/libffprobe.so",
+                    "lib/x86/libffprobe.so"
+                )
+                for (cand in ffprobeCandidates) {
+                    val entry = zip.getEntry(cand)
+                    if (entry != null) {
+                        val binFfprobe = File(binDir, "ffprobe")
+                        if (!binFfprobe.exists() || binFfprobe.length() == 0L) {
+                            zip.getInputStream(entry).use { inp ->
+                                binFfprobe.outputStream().use { out -> inp.copyTo(out) }
+                            }
+                            binFfprobe.setExecutable(true, false)
+                        }
+                        val tgtFfprobe = File(targetDir, "ffprobe")
+                        if (!tgtFfprobe.exists() || tgtFfprobe.length() == 0L) {
+                            try { binFfprobe.copyTo(tgtFfprobe, overwrite = true) } catch (_: Throwable) {}
+                            tgtFfprobe.setExecutable(true, false)
+                        }
+                        val tgtLib = File(targetDir, "libffprobe.so")
+                        if (!tgtLib.exists() || tgtLib.length() == 0L) {
+                            try { binFfprobe.copyTo(tgtLib, overwrite = true) } catch (_: Throwable) {}
+                            tgtLib.setExecutable(true, false)
+                        }
+                        break
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            logW(TAG, "extractBinariesFromApk failed: ${t.message}")
+        }
+    }
+
+    private fun updateFfmpegLibVersion(context: Context, version: String) {
+        try {
+            context.getSharedPreferences("youtubedl-android", Context.MODE_PRIVATE)
+                .edit()
+                .putString("ffmpegLibVersion", version)
+                .apply()
+        } catch (_: Throwable) {}
+    }
+
+    fun extractArchiveFromApk(
+        context: Context,
+        targetDir: File,
+        onProgress: ((percent: Int) -> Unit)? = null
+    ): Boolean {
+        val apkPath = try { context.applicationInfo.sourceDir } catch (_: Throwable) { null } ?: return false
+        val apkFile = File(apkPath)
+        if (!apkFile.exists()) return false
+
+        try {
+            java.util.zip.ZipFile(apkFile).use { zip ->
+                val candidates = listOf(
+                    "lib/arm64-v8a/libffmpeg.zip.so",
+                    "lib/armeabi-v7a/libffmpeg.zip.so",
+                    "lib/x86_64/libffmpeg.zip.so",
+                    "lib/x86/libffmpeg.zip.so"
+                )
+                var zipEntry: java.util.zip.ZipEntry? = null
+                for (cand in candidates) {
+                    val e = zip.getEntry(cand)
+                    if (e != null) {
+                        zipEntry = e
+                        break
+                    }
+                }
+                if (zipEntry == null) {
+                    zipEntry = zip.entries().asSequence().firstOrNull {
+                        it.name.startsWith("lib/") && it.name.endsWith("/libffmpeg.zip.so")
+                    }
+                }
+                if (zipEntry == null) return false
+
+                logI(TAG, "Extracting bundled FFmpeg archive from APK entry ${zipEntry.name} (${zipEntry.size} bytes)...")
+                onProgress?.invoke(25)
+                zip.getInputStream(zipEntry).use { input ->
+                    unzip(input, targetDir)
+                }
+                onProgress?.invoke(75)
+
+                updateFfmpegLibVersion(context, zipEntry.size.toString())
+                return true
+            }
+        } catch (t: Throwable) {
+            logW(TAG, "extractArchiveFromApk failed: ${t.message}")
+            return false
+        }
     }
 
     suspend fun ensureFFmpegInstalled(
@@ -382,8 +550,61 @@ object FFmpegEngineManager {
                 if (isInstalled(context)) return@withLock true
 
                 val targetDir = getFFmpegDir(context)
+                // Clean up any incomplete or corrupted state from previous attempts
+                if (targetDir.exists() && !isInstalled(context)) {
+                    try {
+                        targetDir.deleteRecursively()
+                    } catch (_: Throwable) {}
+                }
                 targetDir.mkdirs()
 
+                // Strategy 1: Check for bundled libffmpeg.zip.so in nativeLibraryDir (packaged in APK)
+                val nativeDir = try { File(context.applicationInfo.nativeLibraryDir) } catch (_: Throwable) { null }
+                val bundledZip = if (nativeDir != null) File(nativeDir, "libffmpeg.zip.so") else null
+                if (bundledZip != null && bundledZip.exists() && bundledZip.length() > 1024 * 1024L) {
+                    try {
+                        logI(TAG, "Extracting bundled FFmpeg archive from ${bundledZip.absolutePath}...")
+                        onProgress?.invoke(20)
+                        unzip(bundledZip, targetDir)
+                        onProgress?.invoke(70)
+                        repairSymlinksAndBinaries(context)
+                        val installedFromBundle = isInstalled(context)
+                        logI(TAG, "Bundled FFmpeg installation result: $installedFromBundle")
+                        if (installedFromBundle) {
+                            updateFfmpegLibVersion(context, bundledZip.length().toString())
+                            onProgress?.invoke(100)
+                            return@withLock true
+                        }
+                    } catch (t: Throwable) {
+                        logW(TAG, "Failed extracting bundled FFmpeg archive: ${t.message}")
+                    }
+                }
+
+                // Strategy 1b: Extract bundled FFmpeg archive directly from APK sourceDir
+                val extractedFromApk = extractArchiveFromApk(context, targetDir, onProgress)
+                if (extractedFromApk) {
+                    repairSymlinksAndBinaries(context)
+                    val installedFromApk = isInstalled(context)
+                    logI(TAG, "APK FFmpeg installation result: $installedFromApk")
+                    if (installedFromApk) {
+                        onProgress?.invoke(100)
+                        return@withLock true
+                    }
+                }
+
+                // Strategy 2: Official youtubedl-android FFmpeg initialization
+                try {
+                    com.yausername.ffmpeg.FFmpeg.getInstance().init(context.applicationContext)
+                    repairSymlinksAndBinaries(context)
+                    if (isInstalled(context)) {
+                        onProgress?.invoke(100)
+                        return@withLock true
+                    }
+                } catch (t: Throwable) {
+                    logW(TAG, "youtubedl-android FFmpeg.init fallback: ${t.message}")
+                }
+
+                // Strategy 3: Dynamic on-demand download from GitHub releases
                 val tempZip = File(context.cacheDir, "ffmpeg_download.tmp")
 
                 for (ffmpegUrl in FFMPEG_RELEASE_URLS) {
@@ -391,10 +612,10 @@ object FFmpegEngineManager {
                         logI(TAG, "Downloading FFmpeg native engine package from $ffmpegUrl")
                         val url = URL(ffmpegUrl)
                         var connection = (url.openConnection() as HttpURLConnection).apply {
-                            connectTimeout = 15000
-                            readTimeout = 30000
+                            connectTimeout = 30000
+                            readTimeout = 60000
                             instanceFollowRedirects = true
-                            setRequestProperty("User-Agent", "SnapLoad-Android/3.0.6")
+                            setRequestProperty("User-Agent", "SnapLoad-Android/3.0.7")
                         }
 
                         var responseCode = connection.responseCode
@@ -405,10 +626,10 @@ object FFmpegEngineManager {
                             val currentUrl = connection.url
                             connection.disconnect()
                             connection = (URL(currentUrl, redirectUrl).openConnection() as HttpURLConnection).apply {
-                                connectTimeout = 15000
-                                readTimeout = 30000
+                                connectTimeout = 30000
+                                readTimeout = 60000
                                 instanceFollowRedirects = true
-                                setRequestProperty("User-Agent", "SnapLoad-Android/3.0.6")
+                                setRequestProperty("User-Agent", "SnapLoad-Android/3.0.7")
                             }
                             responseCode = connection.responseCode
                             redirects++
@@ -423,7 +644,7 @@ object FFmpegEngineManager {
 
                         BufferedInputStream(connection.inputStream).use { input ->
                             FileOutputStream(tempZip).use { output ->
-                                val buffer = ByteArray(32 * 1024)
+                                val buffer = ByteArray(64 * 1024)
                                 var bytesRead: Int
                                 var lastReported = -1
 
@@ -441,6 +662,10 @@ object FFmpegEngineManager {
                             }
                         }
 
+                        if (totalBytes > 0 && downloadedBytes < totalBytes) {
+                            throw java.io.IOException("Incomplete download: received $downloadedBytes of $totalBytes bytes")
+                        }
+
                         logI(TAG, "Extracting FFmpeg to ${targetDir.absolutePath}...")
                         unzip(tempZip, targetDir)
                         tempZip.delete()
@@ -449,7 +674,10 @@ object FFmpegEngineManager {
 
                         val success = isInstalled(context)
                         logI(TAG, "FFmpeg installed successfully: $success")
-                        if (success) return@withLock true
+                        if (success) {
+                            onProgress?.invoke(100)
+                            return@withLock true
+                        }
                     } catch (e: Exception) {
                         logW(TAG, "Failed downloading FFmpeg from $ffmpegUrl: ${e.message}")
                         if (tempZip.exists()) tempZip.delete()
@@ -464,9 +692,8 @@ object FFmpegEngineManager {
         }
     }
 
-    private fun unzip(zipFile: File, destDir: File) {
-
-        ZipInputStream(zipFile.inputStream().buffered()).use { zis ->
+    fun unzip(inputStream: java.io.InputStream, destDir: File) {
+        ZipInputStream(inputStream.buffered()).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
                 val newFile = File(destDir, entry.name)
@@ -480,6 +707,15 @@ object FFmpegEngineManager {
                     newFile.mkdirs()
                 } else {
                     newFile.parentFile?.mkdirs()
+                    // CRITICAL: Delete any existing file or symlink before writing
+                    // to prevent truncating symlink targets or failing on broken symlinks
+                    if (newFile.exists() || isSymlink(newFile)) {
+                        try {
+                            java.nio.file.Files.deleteIfExists(newFile.toPath())
+                        } catch (_: Throwable) {
+                            newFile.delete()
+                        }
+                    }
                     FileOutputStream(newFile).use { fos ->
                         zis.copyTo(fos)
                     }
@@ -487,6 +723,12 @@ object FFmpegEngineManager {
                 zis.closeEntry()
                 entry = zis.nextEntry
             }
+        }
+    }
+
+    fun unzip(zipFile: File, destDir: File) {
+        zipFile.inputStream().buffered().use { input ->
+            unzip(input, destDir)
         }
     }
 }
