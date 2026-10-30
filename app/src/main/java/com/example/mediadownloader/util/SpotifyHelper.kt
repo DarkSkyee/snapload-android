@@ -32,14 +32,43 @@ object SpotifyHelper {
     private const val USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
+    private val trackCache = object : LinkedHashMap<String, SpotifyTrack>(30, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, SpotifyTrack>?): Boolean {
+            return size > 200
+        }
+    }
+
+    fun cacheTrack(key: String, track: SpotifyTrack) {
+        if (key.isBlank()) return
+        synchronized(trackCache) {
+            trackCache[key] = track
+            track.spotifyUrl?.let { if (it.isNotBlank()) trackCache[it] = track }
+        }
+    }
+
+    fun getCachedTrack(key: String): SpotifyTrack? {
+        if (key.isBlank()) return null
+        synchronized(trackCache) {
+            return trackCache[key]
+        }
+    }
+
+    fun parseArtistList(artistString: String): List<String> {
+        if (artistString.isBlank()) return emptyList()
+        return artistString.split(Regex("""[,;&/]|\s+(?:feat\.|ft\.|x|with)\s+""", RegexOption.IGNORE_CASE))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+    }
+
     fun buildSearchQuery(title: String, artists: List<String> = emptyList(), artist: String = ""): String {
         val cleanTitle = TrackMatcher.cleanTitleForSearch(title)
-        val primaryArtist = artists.firstOrNull()?.let { TrackMatcher.cleanArtistForSearch(it) }
-            ?.takeIf { it.isNotBlank() }
-            ?: TrackMatcher.cleanArtistForSearch(artist.substringBefore(",").substringBefore("&")).takeIf { it.isNotBlank() }
-            ?: TrackMatcher.cleanArtistForSearch(artist)
+        val allArtists = if (artists.isNotEmpty()) artists else parseArtistList(artist)
 
-        val secondArtist = artists.getOrNull(1)?.let { TrackMatcher.cleanArtistForSearch(it) }
+        val primaryArtist = allArtists.firstOrNull()?.let { TrackMatcher.cleanArtistForSearch(it) }
+            ?.takeIf { it.isNotBlank() }
+            ?: ""
+
+        val secondArtist = allArtists.getOrNull(1)?.let { TrackMatcher.cleanArtistForSearch(it) }
             ?.takeIf { it.isNotBlank() && it.length < 25 }
 
         val artistPart = if (secondArtist != null && secondArtist != primaryArtist) {
@@ -53,6 +82,10 @@ object SpotifyHelper {
     }
 
     suspend fun fetchTrack(url: String): SpotifyTrack? = withContext(Dispatchers.IO) {
+        val cleanUrl = resolveSpotifyUrl(url)
+        getCachedTrack(cleanUrl)?.let { return@withContext it }
+        getCachedTrack(url)?.let { return@withContext it }
+
         try {
             val oembedUrl = "https://open.spotify.com/oembed?url=${java.net.URLEncoder.encode(url, "UTF-8")}"
             val jsonStr = httpGet(oembedUrl) ?: return@withContext null
@@ -118,7 +151,7 @@ object SpotifyHelper {
             val query = buildSearchQuery(title, artistList, artist)
             val cleanUrl = resolveSpotifyUrl(url)
 
-            SpotifyTrack(
+            val track = SpotifyTrack(
                 title = title,
                 artist = artist,
                 artists = artistList,
@@ -127,6 +160,9 @@ object SpotifyHelper {
                 spotifyUrl = cleanUrl,
                 searchQuery = query
             )
+            cacheTrack(url, track)
+            cacheTrack(cleanUrl, track)
+            track
         } catch (e: Exception) {
             Log.e(TAG, "Failed to resolve Spotify track $url: ${e.message}", e)
             null
@@ -168,23 +204,25 @@ object SpotifyHelper {
                                 ?: tObj.optLong("duration_ms", 0L).takeIf { it > 0L }
                                 ?: tObj.optLong("durationMs", 0L)
                             val uriStr = tObj.optString("uri")
-                            val trackId = if (uriStr.startsWith("spotify:track:")) uriStr.removePrefix("spotify:track:") else null
-                            val spotifyUrl = if (!trackId.isNullOrBlank()) "https://open.spotify.com/track/$trackId" else null
+                            val rawId = tObj.optString("id").takeIf { it.isNotBlank() }
+                                ?: if (uriStr.startsWith("spotify:track:")) uriStr.removePrefix("spotify:track:") else null
+                            val spotifyUrl = if (!rawId.isNullOrBlank()) "https://open.spotify.com/track/$rawId" else null
                             val artistsList = if (tArtist.isNotBlank()) {
-                                tArtist.split(",", ";", " feat.", " ft.", " & ").map { it.trim() }.filter { it.isNotBlank() }
+                                parseArtistList(tArtist)
                             } else emptyList()
                             val query = buildSearchQuery(tTitle, artistsList, tArtist)
-                            tracks.add(
-                                SpotifyTrack(
-                                    title = tTitle,
-                                    artist = tArtist,
-                                    artists = artistsList,
-                                    durationSeconds = durationMs / 1000L,
-                                    thumbnailUrl = thumbnail,
-                                    spotifyUrl = spotifyUrl,
-                                    searchQuery = query
-                                )
+                            val spTrack = SpotifyTrack(
+                                title = tTitle,
+                                artist = tArtist,
+                                artists = artistsList,
+                                durationSeconds = durationMs / 1000L,
+                                thumbnailUrl = thumbnail,
+                                spotifyUrl = spotifyUrl,
+                                searchQuery = query
                             )
+                            tracks.add(spTrack)
+                            spotifyUrl?.let { cacheTrack(it, spTrack) }
+                            cacheTrack("sp_item_${i}_${spTrack.title}", spTrack)
                         }
                     }
                 }
