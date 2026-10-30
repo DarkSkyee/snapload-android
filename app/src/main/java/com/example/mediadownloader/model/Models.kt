@@ -111,13 +111,44 @@ enum class DownloadFormat(val displayName: String, val extension: String, val mi
         get() = this == MP4 || this == MKV || this == WEBM
 }
 
+enum class PlaylistItemStatus {
+    PENDING,
+    DOWNLOADING,
+    COMPLETED,
+    FAILED
+}
+
+data class PlaylistItem(
+    val id: String,
+    val index: Int,
+    val title: String,
+    val author: String = "",
+    val durationSeconds: Long = 0L,
+    val thumbnailUrl: String? = null,
+    val sourceUrl: String = "",
+    val status: PlaylistItemStatus = PlaylistItemStatus.PENDING,
+    val progress: Float = 0f,
+    val error: String? = null
+)
+
+data class PlaylistMetadata(
+    val title: String,
+    val author: String = "",
+    val thumbnailUrl: String? = null,
+    val itemCount: Int = 0,
+    val items: List<PlaylistItem> = emptyList()
+)
+
 data class MediaMetadata(
     val url: String,
     val title: String,
     val author: String = "",
     val thumbnailUrl: String? = null,
     val durationSeconds: Long = 0,
-    val platform: LinkParser.Platform = LinkParser.Platform.UNKNOWN
+    val platform: LinkParser.Platform = LinkParser.Platform.UNKNOWN,
+    val isPlaylist: Boolean = false,
+    val playlistInfo: PlaylistMetadata? = null,
+    val isAudioOnly: Boolean = false
 ) {
     val formattedDuration: String
         get() {
@@ -157,7 +188,30 @@ sealed interface DownloadUiState {
         val title: String,
         val uri: Uri,
         val format: DownloadFormat = DownloadFormat.MP4,
-        val config: DownloadConfiguration = DownloadConfiguration()
+        val config: DownloadConfiguration = DownloadConfiguration(),
+        val fallbackNotice: String? = null
     ) : DownloadUiState
+
+    data class PlaylistDownloading(
+        val playlistTitle: String,
+        val currentIndex: Int,
+        val totalCount: Int,
+        val currentItemTitle: String,
+        val currentItemProgress: Float,
+        val overallProgress: Float,
+        val speed: String = "",
+        val etaSeconds: Long = 0L,
+        val items: List<PlaylistItem> = emptyList()
+    ) : DownloadUiState
+
+    data class PlaylistSuccess(
+        val playlistTitle: String,
+        val totalCount: Int,
+        val successCount: Int,
+        val failedCount: Int,
+        val items: List<PlaylistItem> = emptyList(),
+        val fallbackNotice: String? = null
+    ) : DownloadUiState
+
     data class Error(val message: String) : DownloadUiState
 }

@@ -15,8 +15,8 @@ android {
         applicationId = "com.example.mediadownloader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 7
-        versionName = "2.0.5"
+        versionCode = 8
+        versionName = "3.0.0"
         ndk {
             abiFilters.clear()
             abiFilters.add("arm64-v8a")
@@ -118,7 +118,7 @@ dependencies {
 
   // Downloader & FFmpeg
   implementation(libs.youtubedl.library)
-  implementation(libs.youtubedl.ffmpeg)
+  // implementation(libs.youtubedl.ffmpeg)
   implementation(libs.coil.compose)
   implementation(libs.androidx.compose.material.icons)
 }
