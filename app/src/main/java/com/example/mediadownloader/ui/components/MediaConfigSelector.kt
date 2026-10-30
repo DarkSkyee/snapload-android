@@ -7,7 +7,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -25,18 +24,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -59,21 +54,52 @@ import com.example.mediadownloader.model.VideoQuality
 fun MediaConfigSelector(
     config: DownloadConfiguration,
     onConfigChange: (DownloadConfiguration) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 0.45f else 0.25f)
         ),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
 
+            if (!enabled) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.config_locked_during_download),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
             // 1. Animated MediaType Tabs (Video vs Audio)
             MediaTypeTabs(
                 selectedType = config.mediaType,
-                onSelectType = { onConfigChange(config.copy(mediaType = it)) }
+                onSelectType = { onConfigChange(config.copy(mediaType = it)) },
+                enabled = enabled
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -99,14 +125,16 @@ fun MediaConfigSelector(
                         selectedFormat = config.videoFormat,
                         selectedQuality = config.videoQuality,
                         onFormatChange = { onConfigChange(config.copy(videoFormat = it)) },
-                        onQualityChange = { onConfigChange(config.copy(videoQuality = it)) }
+                        onQualityChange = { onConfigChange(config.copy(videoQuality = it)) },
+                        enabled = enabled
                     )
                 } else {
                     AudioOptionsContent(
                         selectedFormat = config.audioFormat,
                         selectedQuality = config.audioQuality,
                         onFormatChange = { onConfigChange(config.copy(audioFormat = it)) },
-                        onQualityChange = { onConfigChange(config.copy(audioQuality = it)) }
+                        onQualityChange = { onConfigChange(config.copy(audioQuality = it)) },
+                        enabled = enabled
                     )
                 }
             }
@@ -117,13 +145,14 @@ fun MediaConfigSelector(
 @Composable
 private fun MediaTypeTabs(
     selectedType: MediaType,
-    onSelectType: (MediaType) -> Unit
+    onSelectType: (MediaType) -> Unit,
+    enabled: Boolean
 ) {
     val selectedIndex = if (selectedType == MediaType.VIDEO) 0 else 1
 
     Surface(
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = if (enabled) 1f else 0.5f),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -138,6 +167,7 @@ private fun MediaTypeTabs(
                 isSelected = selectedIndex == 0,
                 badge = "MP4 ★",
                 onClick = { onSelectType(MediaType.VIDEO) },
+                enabled = enabled,
                 modifier = Modifier.weight(1f)
             )
 
@@ -147,6 +177,7 @@ private fun MediaTypeTabs(
                 isSelected = selectedIndex == 1,
                 badge = "MP3",
                 onClick = { onSelectType(MediaType.AUDIO) },
+                enabled = enabled,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -160,16 +191,25 @@ private fun MediaTypeTabItem(
     isSelected: Boolean,
     badge: String,
     onClick: () -> Unit,
+    enabled: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val bg = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
-    val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    val bg = when {
+        isSelected && enabled -> MaterialTheme.colorScheme.primary
+        isSelected && !enabled -> MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+        else -> Color.Transparent
+    }
+    val contentColor = when {
+        isSelected -> MaterialTheme.colorScheme.onPrimary
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
 
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .background(bg)
-            .clickable { onClick() }
+            .clickable(enabled = enabled) { onClick() }
             .padding(vertical = 10.dp, horizontal = 12.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -212,7 +252,8 @@ private fun VideoOptionsContent(
     selectedFormat: VideoFormat,
     selectedQuality: VideoQuality,
     onFormatChange: (VideoFormat) -> Unit,
-    onQualityChange: (VideoQuality) -> Unit
+    onQualityChange: (VideoQuality) -> Unit,
+    enabled: Boolean
 ) {
     Column {
         // Format Row
@@ -220,7 +261,7 @@ private fun VideoOptionsContent(
             text = stringResource(R.string.media_format_label),
             fontWeight = FontWeight.SemiBold,
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
         )
         Spacer(modifier = Modifier.height(6.dp))
         Row(
@@ -232,6 +273,7 @@ private fun VideoOptionsContent(
                 FilterChip(
                     selected = isSelected,
                     onClick = { onFormatChange(format) },
+                    enabled = enabled,
                     label = {
                         Text(
                             text = if (format == VideoFormat.MP4) "${format.displayName} ★" else format.displayName,
@@ -253,7 +295,7 @@ private fun VideoOptionsContent(
             text = stringResource(R.string.media_quality_label),
             fontWeight = FontWeight.SemiBold,
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
         )
         Spacer(modifier = Modifier.height(6.dp))
         Row(
@@ -273,6 +315,7 @@ private fun VideoOptionsContent(
                 FilterChip(
                     selected = isSelected,
                     onClick = { onQualityChange(quality) },
+                    enabled = enabled,
                     label = {
                         Text(
                             text = if (quality == VideoQuality.BEST) "$label ★" else label,
@@ -293,7 +336,8 @@ private fun AudioOptionsContent(
     selectedFormat: AudioFormat,
     selectedQuality: AudioQuality,
     onFormatChange: (AudioFormat) -> Unit,
-    onQualityChange: (AudioQuality) -> Unit
+    onQualityChange: (AudioQuality) -> Unit,
+    enabled: Boolean
 ) {
     Column {
         // Format Row (Scrollable chips)
@@ -301,7 +345,7 @@ private fun AudioOptionsContent(
             text = stringResource(R.string.media_format_label),
             fontWeight = FontWeight.SemiBold,
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
         )
         Spacer(modifier = Modifier.height(6.dp))
         Row(
@@ -315,6 +359,7 @@ private fun AudioOptionsContent(
                 FilterChip(
                     selected = isSelected,
                     onClick = { onFormatChange(format) },
+                    enabled = enabled,
                     label = {
                         Text(
                             text = if (format == AudioFormat.MP3) "${format.displayName} ★" else format.displayName,
@@ -335,7 +380,7 @@ private fun AudioOptionsContent(
             text = stringResource(R.string.media_quality_label),
             fontWeight = FontWeight.SemiBold,
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
         )
         Spacer(modifier = Modifier.height(6.dp))
         Row(
@@ -355,6 +400,7 @@ private fun AudioOptionsContent(
                 FilterChip(
                     selected = isSelected,
                     onClick = { onQualityChange(quality) },
+                    enabled = enabled,
                     label = {
                         Text(
                             text = if (quality == AudioQuality.BEST) "$label ★" else label,

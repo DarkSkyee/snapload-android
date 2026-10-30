@@ -98,9 +98,8 @@ class MainScreenViewModel(
             } catch (_: Exception) {}
 
             try {
-                val autoUpdateResult = updateManager?.checkAutoUpdateOnLaunch()
-                if (autoUpdateResult is UpdateCheckResult.UpdateAvailable) {
-                    _uiState.update { it.copy(availableRelease = autoUpdateResult.releaseInfo) }
+                if (preferences?.autoUpdateApp != false) {
+                    checkForAppUpdates(manual = false)
                 }
             } catch (_: Exception) {}
         }
@@ -184,28 +183,9 @@ class MainScreenViewModel(
         DownloadService.resetState()
     }
 
-    fun updateEngine() {
-        if (_uiState.value.isUpdatingEngine) return
-        _uiState.update { it.copy(isUpdatingEngine = true, engineUpdateMessage = null) }
-        viewModelScope.launch {
-            val result = repository.updateEngine()
-            _uiState.update {
-                it.copy(
-                    isUpdatingEngine = false,
-                    engineUpdateMessage = result.getOrNull() ?: "Error: ${result.exceptionOrNull()?.message}",
-                    engineVersion = repository.getEngineVersion()
-                )
-            }
-        }
-    }
-
-    fun clearEngineUpdateMessage() {
-        _uiState.update { it.copy(engineUpdateMessage = null) }
-    }
-
-    fun setLanguage(langCode: String) {
-        preferences?.selectedLanguage = langCode
-        _uiState.update { it.copy(currentLanguage = langCode) }
+    fun setLanguage(language: String) {
+        preferences?.selectedLanguage = language
+        _uiState.update { it.copy(currentLanguage = language) }
     }
 
     fun setAutoUpdateEngine(enabled: Boolean) {
@@ -218,13 +198,33 @@ class MainScreenViewModel(
         _uiState.update { it.copy(autoUpdateApp = enabled) }
     }
 
+    fun updateEngine() {
+        if (_uiState.value.isUpdatingEngine) return
+
+        _uiState.update { it.copy(isUpdatingEngine = true, engineUpdateMessage = null) }
+        viewModelScope.launch {
+            val result = repository.updateEngine()
+            _uiState.update { current ->
+                current.copy(
+                    isUpdatingEngine = false,
+                    engineVersion = repository.getEngineVersion(),
+                    engineUpdateMessage = result.getOrNull() ?: ("Engine update failed: " + result.exceptionOrNull()?.message)
+                )
+            }
+        }
+    }
+
+    fun clearEngineUpdateMessage() {
+        _uiState.update { it.copy(engineUpdateMessage = null) }
+    }
+
     fun checkForAppUpdates(manual: Boolean = true) {
         val mgr = updateManager ?: return
         if (_uiState.value.isCheckingAppUpdate) return
 
         _uiState.update { it.copy(isCheckingAppUpdate = true, appUpdateMessage = null) }
         viewModelScope.launch {
-            val result = mgr.checkForUpdates(force = true)
+            val result = if (manual) mgr.checkForUpdates(force = true) else (mgr.checkAutoUpdateOnLaunch() ?: mgr.checkForUpdates(force = false))
             _uiState.update { current ->
                 when (result) {
                     is UpdateCheckResult.UpdateAvailable -> {

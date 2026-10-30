@@ -18,6 +18,9 @@
     <string name="metadata_fetch_failed">Could not load preview (download may still work): %1$s</string>
 
     <!-- Media Type & Config -->
+    <string name="config_locked_during_download">Format &amp; quality locked during active download</string>
+    <string name="update_banner_title">New version %1$s is available!</string>
+    <string name="update_banner_subtitle">Tap to download and install the update</string>
     <string name="media_type_video">Video</string>
     <string name="media_type_audio">Audio</string>
     <string name="media_format_label">Format</string>

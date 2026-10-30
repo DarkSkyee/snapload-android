@@ -35,6 +35,9 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -116,6 +119,10 @@ fun MainScreen(
         }
     }
 
+    val isDownloading = downloadState is DownloadUiState.Downloading ||
+            downloadState is DownloadUiState.Processing ||
+            downloadState is DownloadUiState.SavingToGallery
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -148,11 +155,22 @@ fun MainScreen(
                     Spacer(modifier = Modifier.width(4.dp))
 
                     IconButton(onClick = { showSettingsSheet = true }) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = stringResource(R.string.settings_title),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                        BadgedBox(
+                            badge = {
+                                if (uiState.availableRelease != null) {
+                                    Badge(
+                                        containerColor = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(8.dp)
+                                    )
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = stringResource(R.string.settings_title),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -171,6 +189,55 @@ fun MainScreen(
         ) {
             item { Spacer(modifier = Modifier.height(4.dp)) }
 
+            // 0. Update Available Banner
+            uiState.availableRelease?.let { release ->
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdate,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(26.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.update_banner_title, release.versionName),
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    text = stringResource(R.string.update_banner_subtitle),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = { viewModel.downloadAndInstallUpdate(release) },
+                                shape = RoundedCornerShape(10.dp),
+                                enabled = !uiState.isDownloadingAppUpdate
+                            ) {
+                                Text(
+                                    text = if (uiState.isDownloadingAppUpdate) "${uiState.appUpdateProgress}%" else stringResource(R.string.update_dialog_button_install),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // 1. Input Section
             item {
                 UrlInputCard(
@@ -182,7 +249,8 @@ fun MainScreen(
                         val clipText = clipboard.primaryClip?.getItemAt(0)?.text?.toString()
                         viewModel.onPasteUrl(clipText)
                     },
-                    onClear = { viewModel.onClearInput() }
+                    onClear = { viewModel.onClearInput() },
+                    enabled = !isDownloading
                 )
             }
 
@@ -205,15 +273,13 @@ fun MainScreen(
             item {
                 MediaConfigSelector(
                     config = uiState.downloadConfig,
-                    onConfigChange = { viewModel.onConfigChanged(it) }
+                    onConfigChange = { viewModel.onConfigChanged(it) },
+                    enabled = !isDownloading
                 )
             }
 
             // 4. Download Action Button with Bouncy Micro-interaction
             item {
-                val isDownloading = downloadState is DownloadUiState.Downloading ||
-                        downloadState is DownloadUiState.Processing ||
-                        downloadState is DownloadUiState.SavingToGallery
                 val isUrlValid = LinkParser.isSupported(uiState.urlInput)
 
                 val buttonLabel = if (uiState.downloadConfig.mediaType == MediaType.VIDEO) {
@@ -301,9 +367,8 @@ fun MainScreen(
                         item = item,
                         onOpen = {
                             try {
-                                val uri = Uri.parse(item.uriString)
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(uri, item.config.mimeType)
+                                    setDataAndType(Uri.parse(item.uriString), item.config.mimeType)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
                                 context.startActivity(intent)
@@ -319,11 +384,10 @@ fun MainScreen(
                 }
             }
 
-            item { Spacer(modifier = Modifier.height(24.dp)) }
+            item { Spacer(modifier = Modifier.height(32.dp)) }
         }
     }
 
-    // Settings ModalBottomSheet
     if (showSettingsSheet) {
         AppMenuBottomSheet(
             sheetState = sheetState,
@@ -438,16 +502,18 @@ fun UrlInputCard(
     platform: LinkParser.Platform,
     onUrlChange: (String) -> Unit,
     onPaste: () -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    enabled: Boolean = true
 ) {
     Card(
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 0.5f else 0.3f))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             OutlinedTextField(
                 value = url,
                 onValueChange = onUrlChange,
+                enabled = enabled,
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text(stringResource(R.string.paste_link_label)) },
                 placeholder = { Text(stringResource(R.string.paste_link_placeholder)) },
@@ -455,7 +521,7 @@ fun UrlInputCard(
                 maxLines = 3,
                 shape = RoundedCornerShape(12.dp),
                 trailingIcon = {
-                    if (url.isNotEmpty()) {
+                    if (url.isNotEmpty() && enabled) {
                         IconButton(onClick = onClear) {
                             Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.clear_input))
                         }
@@ -472,6 +538,7 @@ fun UrlInputCard(
             ) {
                 OutlinedButton(
                     onClick = onPaste,
+                    enabled = enabled,
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -521,57 +588,58 @@ fun MetadataPreviewCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                Spacer(modifier = Modifier.width(16.dp))
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.5.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(14.dp))
                 Text(
                     text = stringResource(R.string.fetching_metadata),
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         } else if (metadata != null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(90.dp, 90.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    AsyncImage(
-                        model = metadata.thumbnailUrl,
-                        contentDescription = stringResource(R.string.thumbnail_desc),
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    if (metadata.formattedDuration.isNotBlank()) {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color.Black.copy(alpha = 0.75f),
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(4.dp)
-                        ) {
-                            Text(
-                                text = metadata.formattedDuration,
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (!metadata.thumbnailUrl.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+                    ) {
+                        AsyncImage(
+                            model = metadata.thumbnailUrl,
+                            contentDescription = stringResource(R.string.thumbnail_desc),
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                        if (metadata.durationSeconds > 0) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color.Black.copy(alpha = 0.75f),
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(8.dp)
+                            ) {
+                                Text(
+                                    text = metadata.durationFormatted,
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.padding(14.dp)) {
                     Text(
                         text = metadata.title,
                         fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -586,12 +654,25 @@ fun MetadataPreviewCard(
                 }
             }
         } else if (error != null) {
-            Text(
-                text = error,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline,
-                modifier = Modifier.padding(12.dp)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Error,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
         }
     }
 }
@@ -615,6 +696,8 @@ fun DownloadStatusCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             when (state) {
+                is DownloadUiState.Idle -> {}
+
                 is DownloadUiState.Downloading -> {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -626,16 +709,15 @@ fun DownloadStatusCard(
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleMedium
                         )
-                        TextButton(onClick = onCancel) {
-                            Text(stringResource(R.string.cancel), color = MaterialTheme.colorScheme.error)
+                        IconButton(onClick = onCancel) {
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.cancel))
                         }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    val progressFraction = (state.progress / 100f).coerceIn(0f, 1f)
                     LinearProgressIndicator(
-                        progress = { progressFraction },
+                        progress = { state.progress / 100f },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(8.dp)
@@ -644,39 +726,45 @@ fun DownloadStatusCard(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    Text(
-                        text = state.speed,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = state.statusText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (state.etaSeconds > 0) {
+                            val mins = state.etaSeconds / 60
+                            val secs = state.etaSeconds % 60
+                            Text(
+                                text = String.format("ETA %02d:%02d", mins, secs),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
                 }
 
                 is DownloadUiState.Processing -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = stringResource(R.string.status_processing, state.stage),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
 
                 is DownloadUiState.SavingToGallery -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = stringResource(R.string.status_saving_gallery),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     }
                 }
@@ -689,7 +777,7 @@ fun DownloadStatusCard(
                             tint = Color(0xFF2E7D32),
                             modifier = Modifier.size(28.dp)
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = if (state.config.mediaType == MediaType.VIDEO) {
@@ -707,21 +795,30 @@ fun DownloadStatusCard(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
-                        IconButton(onClick = onReset) {
-                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close))
-                        }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    Button(
-                        onClick = { onOpen(state.uri, state.config.mimeType) },
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.open_in_player))
+                        Button(
+                            onClick = { onOpen(state.uri, state.config.mimeType) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(stringResource(R.string.open_in_player))
+                        }
+
+                        OutlinedButton(
+                            onClick = onReset,
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(stringResource(R.string.close))
+                        }
                     }
                 }
 
@@ -731,9 +828,9 @@ fun DownloadStatusCard(
                             imageVector = Icons.Default.Error,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(24.dp)
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = stringResource(R.string.status_error),
@@ -743,17 +840,22 @@ fun DownloadStatusCard(
                             Text(
                                 text = state.message,
                                 style = MaterialTheme.typography.bodySmall,
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis
+                                color = MaterialTheme.colorScheme.onErrorContainer
                             )
                         }
-                        IconButton(onClick = onReset) {
-                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close))
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = onReset) {
+                            Text(stringResource(R.string.close))
                         }
                     }
                 }
-
-                else -> {}
             }
         }
     }
@@ -767,22 +869,29 @@ fun RecentDownloadItemRow(
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onOpen() }
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable { onOpen() }
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = if (item.config.mediaType == MediaType.VIDEO) Icons.Default.Movie else Icons.Default.Audiotrack,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(28.dp)
-            )
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if (item.config.mediaType == MediaType.VIDEO) Icons.Default.Movie else Icons.Default.Audiotrack,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.width(12.dp))
 
@@ -795,15 +904,19 @@ fun RecentDownloadItemRow(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${item.config.formatDisplayName} • ${item.config.qualityDisplayName}",
+                    text = "${item.config.formatDisplayName} • ${item.config.qualityDisplayName} • " +
+                            stringResource(if (item.config.mediaType == MediaType.VIDEO) R.string.recent_saved_in_gallery else R.string.recent_saved_in_music),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            IconButton(onClick = onOpen) {
-                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open file")
-            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }

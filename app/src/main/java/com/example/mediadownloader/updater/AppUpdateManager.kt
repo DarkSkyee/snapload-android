@@ -36,7 +36,7 @@ class AppUpdateManager(private val context: Context) {
         private const val TAG = "AppUpdateManager"
         private const val GITHUB_RELEASES_URL =
             "https://api.github.com/repos/DarkSkyee/snapload-android/releases/latest"
-        private const val CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000L // 24 hours
+        private const val CHECK_INTERVAL_MS = 2 * 60 * 1000L // 2 minutes cooldown
 
         fun isNewerVersion(remote: String, current: String): Boolean {
             val cleanRemote = remote.removePrefix("v").removePrefix("V").trim()
@@ -178,115 +178,94 @@ class AppUpdateManager(private val context: Context) {
             while (true) {
                 val url = URL(currentUrl)
                 connection = (url.openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = false
                     connectTimeout = 15000
-                    readTimeout = 20000
-                    instanceFollowRedirects = true
+                    readTimeout = 15000
                     setRequestProperty("User-Agent", "SnapLoad-Android/${getCurrentVersionName()}")
-                    setRequestProperty("Accept", "application/octet-stream, */*")
                 }
 
-                val status = connection.responseCode
-                if (status in listOf(
-                        HttpURLConnection.HTTP_MOVED_PERM,
-                        HttpURLConnection.HTTP_MOVED_TEMP,
-                        HttpURLConnection.HTTP_SEE_OTHER,
-                        307,
-                        308
-                    )
+                val responseCode = connection.responseCode
+                if (responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
+                    responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
+                    responseCode == HttpURLConnection.HTTP_SEE_OTHER ||
+                    responseCode == 307 || responseCode == 308
                 ) {
+                    val location = connection.getHeaderField("Location")
+                        ?: return@withContext Result.failure(IllegalStateException("Redirect header missing"))
+                    currentUrl = location
                     redirectCount++
                     if (redirectCount > maxRedirects) {
                         return@withContext Result.failure(IllegalStateException("Too many redirects: $redirectCount"))
                     }
-                    val location = connection.getHeaderField("Location")
-                        ?: return@withContext Result.failure(IllegalStateException("Redirect with no Location header"))
-                    currentUrl = if (location.startsWith("http")) location else URL(url, location).toString()
                     connection.disconnect()
                     continue
                 }
 
-                if (status != HttpURLConnection.HTTP_OK) {
-                    return@withContext Result.failure(IllegalStateException("Server returned HTTP $status"))
+                if (responseCode != HttpURLConnection.HTTP_OK) {
+                    return@withContext Result.failure(IllegalStateException("Download failed with HTTP $responseCode"))
                 }
+
                 break
             }
 
-            val totalBytes = connection.contentLengthLong.takeIf { it > 0 }
-                ?: connection.contentLength.toLong()
+            val totalLength = connection.contentLength.toLong()
             var downloadedBytes = 0L
 
             connection.inputStream.use { input ->
                 FileOutputStream(destinationFile).use { output ->
-                    val buffer = ByteArray(16384)
+                    val buffer = ByteArray(16 * 1024)
                     var bytesRead: Int
-                    var lastReportedPercent = -1
                     while (input.read(buffer).also { bytesRead = it } != -1) {
                         output.write(buffer, 0, bytesRead)
                         downloadedBytes += bytesRead
-                        if (totalBytes > 0) {
-                            val percent = ((downloadedBytes * 100) / totalBytes).toInt().coerceIn(0, 100)
-                            if (percent != lastReportedPercent) {
-                                lastReportedPercent = percent
-                                onProgress(percent)
-                            }
-                        } else {
-                            val pseudoPercent = ((downloadedBytes / 1024 / 100) % 95).toInt()
-                            if (pseudoPercent != lastReportedPercent) {
-                                lastReportedPercent = pseudoPercent
-                                onProgress(pseudoPercent)
-                            }
+                        if (totalLength > 0L) {
+                            val percent = ((downloadedBytes * 100) / totalLength).toInt().coerceIn(0, 100)
+                            onProgress(percent)
                         }
                     }
                     output.flush()
                 }
             }
 
-            onProgress(100)
-
-            if (destinationFile.exists() && destinationFile.length() > 0) {
+            if (destinationFile.exists() && destinationFile.length() > 0L) {
+                onProgress(100)
                 Result.success(destinationFile)
             } else {
-                Result.failure(IllegalStateException("Downloaded APK file is empty or missing"))
+                Result.failure(IllegalStateException("Downloaded APK is empty"))
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to download update APK: ${e.message}", e)
+            Log.e(TAG, "APK download error: ${e.message}", e)
             Result.failure(e)
         }
     }
 
     fun promptInstallApk(apkFile: File): Result<Unit> {
         return try {
-            if (!apkFile.exists() || apkFile.length() == 0L) {
-                return Result.failure(IllegalStateException("APK file does not exist or is empty"))
-            }
-
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (!context.packageManager.canRequestPackageInstalls()) {
-                    val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                val canInstall = context.packageManager.canRequestPackageInstalls()
+                if (!canInstall) {
+                    val manageIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
                         data = Uri.parse("package:${context.packageName}")
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK
                     }
-                    context.startActivity(settingsIntent)
-                    return Result.failure(SecurityException("Permission to install unknown apps requested"))
+                    context.startActivity(manageIntent)
+                    return Result.failure(SecurityException("App install permission requested"))
                 }
             }
 
-            val contentUri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                apkFile
-            )
+            val authority = "${context.packageName}.fileprovider"
+            val contentUri = FileProvider.getUriForFile(context, authority, apkFile)
 
             val installIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(contentUri, "application/vnd.android.package-archive")
-                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
             }
 
             context.startActivity(installIntent)
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch package installer: ${e.message}", e)
+            Log.e(TAG, "Failed to launch installer intent: ${e.message}", e)
             Result.failure(e)
         }
     }
