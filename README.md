@@ -8,12 +8,18 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![yt-dlp](https://img.shields.io/badge/Core-yt--dlp%20Engine-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://github.com/yt-dlp/yt-dlp)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
+[![License](https://img.shields.io/badge/License-Non--Commercial%20(Attribution)-orange.svg?style=for-the-badge)](LICENSE)
 
 <br/>
 
 <p align="center">
   <img src="docs/assets/logo.svg" width="160" height="160" alt="SnapLoad Logo" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/DarkSkyee/snapload-android/releases/latest">
+    <img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F%20Download-Latest%20Release%20APK-6366F1?style=for-the-badge&logo=android&logoColor=white" height="42" alt="Download Latest Release APK" />
+  </a>
 </p>
 
 ---
@@ -28,10 +34,10 @@ Your links, files, and queries never leave your device. Downloaded media is imme
 
 ---
 
-## ✨ Features (v3.0)
+## ✨ Features (v3.0+)
 
-- 🪶 **Ultra-Lightweight (~20 MB base APK)**:
-  - Base APK shrunk by **>60%** (from ~56 MB down to **~20.8 MB**), packaging lightning-fast execution binaries and modular on-demand engine loading.
+- 🪶 **Ultra-Lightweight (~21 MB base APK)**:
+  - Base APK shrunk by **>60%** (from ~56 MB down to **~21 MB**), packaging lightning-fast execution binaries and modular on-demand engine loading.
 - 🎧 **Spotify & YouTube Music Support**:
   - Full native support for Spotify tracks, albums, and playlists as well as YouTube Music.
   - Automatically fetches metadata and matches high-fidelity audio streams.
@@ -63,7 +69,7 @@ Your links, files, and queries never leave your device. Downloaded media is imme
 
 ## 📲 How to Install
 
-1. Navigate to the **[Latest Releases](https://github.com/DarkSkyee/snapload-android/releases/latest)** page.
+1. Navigate to the **[Latest Releases](https://github.com/DarkSkyee/snapload-android/releases/latest)** page (or click the download button above).
 2. Download the latest `SnapLoad-v*.apk` package.
 3. Open the downloaded APK on your Android phone.
 4. If prompted, allow **"Install unknown apps"** for your browser or file manager.
@@ -108,4 +114,9 @@ cd snapload-android
 
 ## 📄 License
 
-Distributed under the **MIT License**. Created with ❤️ by **DarkSkyee**.
+This project is licensed under the **MIT Non-Commercial License (MIT-NC) with Attribution**:
+- ✅ **Allowed**: You are completely free to use, copy, modify, fork, and share this application for personal and educational purposes.
+- ❌ **Commercial Prohibition**: You **may NOT** sell, resell, or monetize this software, its source code, or any derivative works in any way.
+- ❌ **Attribution Required**: You **may NOT** remove the original author's name or claim authorship. All copies and forks must prominently retain attribution to the original creator, **DarkSkyee**.
+
+See the full [LICENSE](LICENSE) file for complete legal terms.
