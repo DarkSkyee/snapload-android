@@ -63,6 +63,7 @@ android {
     packaging {
       jniLibs {
         useLegacyPackaging = true
+        excludes += "**/libffmpeg.zip.so"
       }
       resources {
         excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -118,7 +119,7 @@ dependencies {
 
   // Downloader & FFmpeg
   implementation(libs.youtubedl.library)
-  // implementation(libs.youtubedl.ffmpeg)
+  implementation(libs.youtubedl.ffmpeg)
   implementation(libs.coil.compose)
   implementation(libs.androidx.compose.material.icons)
 }

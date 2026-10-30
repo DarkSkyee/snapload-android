@@ -43,6 +43,7 @@ object SpotifyHelper {
             var title = fullTitle
             var artist = "Spotify"
 
+            var thumbnail = thumb
             val embedUrl = toEmbedUrl(url)
             val embedHtml = embedUrl?.let { httpGet(it) }
             if (embedHtml != null) {
@@ -73,6 +74,10 @@ object SpotifyHelper {
                             val subtitle = entity.optString("subtitle")
                             if (subtitle.isNotBlank()) artist = subtitle
                         }
+
+                        if (thumbnail.isNullOrBlank()) {
+                            thumbnail = extractThumbnail(entity)
+                        }
                     }
                 }
             }
@@ -81,7 +86,7 @@ object SpotifyHelper {
                 title = title,
                 artist = artist,
                 durationSeconds = 0L,
-                thumbnailUrl = thumb,
+                thumbnailUrl = thumbnail,
                 searchQuery = "ytsearch1:$artist - $title audio"
             )
         } catch (e: Exception) {
@@ -110,15 +115,17 @@ object SpotifyHelper {
 
                 if (entity != null) {
                     playlistTitle = entity.optString("name", playlistTitle)
-                    val visual = entity.optJSONObject("visualIdentity")
-                    thumbnail = visual?.optJSONObject("image")?.optJSONArray("sources")?.optJSONObject(0)?.optString("url")
+                    val subtitle = entity.optString("subtitle")
+                    if (subtitle.isNotBlank()) author = subtitle
+
+                    thumbnail = extractThumbnail(entity)
 
                     val trackList = entity.optJSONArray("trackList")
                     if (trackList != null) {
                         for (i in 0 until trackList.length()) {
                             val tObj = trackList.optJSONObject(i) ?: continue
                             val tTitle = tObj.optString("title", "Track ${i + 1}")
-                            val tArtist = tObj.optString("subtitle", "Unknown Artist")
+                            val tArtist = tObj.optString("subtitle", author)
                             val durationMs = tObj.optLong("duration", 0L)
                             tracks.add(
                                 SpotifyTrack(
@@ -134,7 +141,7 @@ object SpotifyHelper {
                 }
             }
 
-            // Fallback to oembed if title is still default
+            // Fallback to oembed if title is still default or thumbnail missing
             if (playlistTitle == "Spotify Playlist" || thumbnail == null) {
                 try {
                     val oembedUrl = "https://open.spotify.com/oembed?url=${java.net.URLEncoder.encode(url, "UTF-8")}"
@@ -163,8 +170,44 @@ object SpotifyHelper {
         }
     }
 
-    private fun toEmbedUrl(url: String): String? {
+    private fun extractThumbnail(entity: JSONObject): String? {
+        val visual = entity.optJSONObject("visualIdentity")
+        val imgArray = visual?.optJSONArray("image")
+        if (imgArray != null && imgArray.length() > 0) {
+            val url = imgArray.optJSONObject(0)?.optString("url")
+            if (!url.isNullOrBlank()) return url
+        }
+        val sources = entity.optJSONObject("coverArt")?.optJSONArray("sources")
+        if (sources != null && sources.length() > 0) {
+            val url = sources.optJSONObject(0)?.optString("url")
+            if (!url.isNullOrBlank()) return url
+        }
+        return null
+    }
+
+    fun resolveSpotifyUrl(url: String): String {
         val clean = url.trim()
+        if (clean.contains("spotify.link", ignoreCase = true)) {
+            try {
+                val conn = (URL(clean).openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = false
+                    requestMethod = "HEAD"
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                    setRequestProperty("User-Agent", USER_AGENT)
+                }
+                val redirect = conn.getHeaderField("Location")
+                conn.disconnect()
+                if (!redirect.isNullOrBlank()) {
+                    return redirect
+                }
+            } catch (_: Exception) {}
+        }
+        return clean
+    }
+
+    fun toEmbedUrl(url: String): String? {
+        val clean = resolveSpotifyUrl(url)
         val matcher = Pattern.compile("open\\.spotify\\.com/(track|playlist|album)/([a-zA-Z0-9]+)").matcher(clean)
         return if (matcher.find()) {
             val type = matcher.group(1)

@@ -52,15 +52,30 @@ object FFmpegEngineManager {
             try {
                 Log.i(TAG, "Downloading FFmpeg native engine package from $FFMPEG_RELEASE_URL")
                 val url = URL(FFMPEG_RELEASE_URL)
-                val connection = (url.openConnection() as HttpURLConnection).apply {
+                var connection = (url.openConnection() as HttpURLConnection).apply {
                     connectTimeout = 15000
                     readTimeout = 30000
                     instanceFollowRedirects = true
                     setRequestProperty("User-Agent", "SnapLoad-Android/3.0")
                 }
 
-                if (connection.responseCode !in 200..299) {
-                    Log.w(TAG, "Primary URL failed (${connection.responseCode}), attempting mirror...")
+                var responseCode = connection.responseCode
+                if (responseCode in 300..399) {
+                    val redirectUrl = connection.getHeaderField("Location")
+                    if (!redirectUrl.isNullOrBlank()) {
+                        connection.disconnect()
+                        connection = (URL(redirectUrl).openConnection() as HttpURLConnection).apply {
+                            connectTimeout = 15000
+                            readTimeout = 30000
+                            instanceFollowRedirects = true
+                            setRequestProperty("User-Agent", "SnapLoad-Android/3.0")
+                        }
+                        responseCode = connection.responseCode
+                    }
+                }
+
+                if (responseCode !in 200..299) {
+                    throw java.io.IOException("FFmpeg download failed with HTTP code $responseCode")
                 }
 
                 val totalBytes = connection.contentLengthLong
