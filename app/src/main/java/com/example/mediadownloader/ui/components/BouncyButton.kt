@@ -21,14 +21,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 @Composable
 fun Modifier.bouncyClickable(
     enabled: Boolean = true,
-    scaleDown: Float = 0.94f,
+    scaleDown: Float = 0.97f,
     onClick: () -> Unit
 ): Modifier {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (isPressed && enabled) scaleDown else 1f,
-        animationSpec = spring(dampingRatio = 0.55f, stiffness = 400f),
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 500f),
         label = "bouncy_scale"
     )
 
@@ -53,14 +53,14 @@ fun BouncyButton(
     shape: Shape = ButtonDefaults.shape,
     colors: ButtonColors = ButtonDefaults.buttonColors(),
     contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
-    scaleDown: Float = 0.95f,
+    scaleDown: Float = 0.97f,
     content: @Composable RowScope.() -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (isPressed && enabled) scaleDown else 1f,
-        animationSpec = spring(dampingRatio = 0.55f, stiffness = 400f),
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 500f),
         label = "bouncy_button_scale"
     )
 
