@@ -5,11 +5,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mediadownloader.data.AppPreferences
 import com.example.mediadownloader.data.DownloadRepository
+import com.example.mediadownloader.model.AudioFormat
+import com.example.mediadownloader.model.AudioQuality
 import com.example.mediadownloader.model.DownloadConfiguration
 import com.example.mediadownloader.model.DownloadFormat
 import com.example.mediadownloader.model.DownloadUiState
 import com.example.mediadownloader.model.DownloadedItem
 import com.example.mediadownloader.model.MediaMetadata
+import com.example.mediadownloader.model.MediaType
 import com.example.mediadownloader.service.DownloadService
 import com.example.mediadownloader.updater.AppUpdateManager
 import com.example.mediadownloader.updater.ReleaseInfo
@@ -72,21 +75,40 @@ class MainScreenViewModel(
         // Observe download state to automatically record successful downloads in history
         viewModelScope.launch {
             DownloadService.downloadState.collect { state ->
-                if (state is DownloadUiState.Success) {
-                    val item = DownloadedItem(
-                        id = System.currentTimeMillis().toString(),
-                        title = state.title,
-                        uriString = state.uri.toString(),
-                        format = state.format,
-                        config = state.config,
-                        sizeBytes = 0L,
-                        timestamp = System.currentTimeMillis()
-                    )
-                    _uiState.update { current ->
-                        current.copy(
-                            recentDownloads = listOf(item) + current.recentDownloads.filter { it.uriString != item.uriString }
+                when (state) {
+                    is DownloadUiState.Success -> {
+                        val item = DownloadedItem(
+                            id = System.currentTimeMillis().toString(),
+                            title = state.title,
+                            uriString = state.uri.toString(),
+                            format = state.format,
+                            config = state.config,
+                            sizeBytes = 0L,
+                            timestamp = System.currentTimeMillis()
                         )
+                        _uiState.update { current ->
+                            current.copy(
+                                recentDownloads = listOf(item) + current.recentDownloads.filter { it.uriString != item.uriString }
+                            )
+                        }
                     }
+                    is DownloadUiState.PlaylistSuccess -> {
+                        val item = DownloadedItem(
+                            id = System.currentTimeMillis().toString(),
+                            title = "${state.playlistTitle} (${state.successCount}/${state.totalCount})",
+                            uriString = "",
+                            format = DownloadFormat.MP3,
+                            config = DownloadConfiguration(mediaType = MediaType.AUDIO, audioFormat = AudioFormat.MP3),
+                            sizeBytes = 0L,
+                            timestamp = System.currentTimeMillis()
+                        )
+                        _uiState.update { current ->
+                            current.copy(
+                                recentDownloads = listOf(item) + current.recentDownloads
+                            )
+                        }
+                    }
+                    else -> {}
                 }
             }
         }
@@ -168,11 +190,15 @@ class MainScreenViewModel(
         val url = LinkParser.extractUrl(_uiState.value.urlInput) ?: _uiState.value.urlInput.trim()
         if (url.isBlank()) return
 
-        val title = _uiState.value.metadata?.title
-            ?: "SnapLoad_${System.currentTimeMillis()}"
+        val metadata = _uiState.value.metadata
         val config = _uiState.value.downloadConfig
 
-        DownloadService.startDownload(context, url, config, title)
+        if (metadata?.isPlaylist == true && metadata.playlistInfo != null) {
+            DownloadService.startPlaylistDownload(context, metadata.playlistInfo, config)
+        } else {
+            val title = metadata?.title ?: "SnapLoad_${System.currentTimeMillis()}"
+            DownloadService.startDownload(context, url, config, title)
+        }
     }
 
     fun cancelDownload(context: Context) {
@@ -322,9 +348,21 @@ class MainScreenViewModel(
             val result = repository.fetchMetadata(url)
             _uiState.update { current ->
                 if (result.isSuccess) {
+                    val meta = result.getOrNull()
+                    val autoAudioConfig = if (meta?.isAudioOnly == true && current.downloadConfig.mediaType == MediaType.VIDEO) {
+                        DownloadConfiguration(
+                            mediaType = MediaType.AUDIO,
+                            audioFormat = AudioFormat.MP3,
+                            audioQuality = AudioQuality.BEST
+                        )
+                    } else {
+                        current.downloadConfig
+                    }
                     current.copy(
                         isFetchingMetadata = false,
-                        metadata = result.getOrNull(),
+                        metadata = meta,
+                        downloadConfig = autoAudioConfig,
+                        selectedFormat = autoAudioConfig.asDownloadFormat,
                         metadataError = null
                     )
                 } else {
