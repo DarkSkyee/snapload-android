@@ -624,7 +624,7 @@ fun MetadataPreviewCard(
                                     .padding(8.dp)
                             ) {
                                 Text(
-                                    text = metadata.durationFormatted,
+                                    text = metadata.formattedDuration,
                                     color = Color.White,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
@@ -696,7 +696,8 @@ fun DownloadStatusCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             when (state) {
-                is DownloadUiState.Idle -> {}
+                is DownloadUiState.Idle,
+                is DownloadUiState.LoadingMetadata -> {}
 
                 is DownloadUiState.Downloading -> {
                     Row(
@@ -731,7 +732,7 @@ fun DownloadStatusCard(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = state.statusText,
+                            text = state.speed,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
