@@ -59,8 +59,9 @@ class MediaStoreSaverTest {
     fun sanitizeFileName_truncatesExcessivelyLongTitles() {
         val longTitle = "A".repeat(300)
         val sanitized = MediaStoreSaver.sanitizeFileName(longTitle)
-        assertEquals(120, sanitized.length)
-        assertEquals("A".repeat(120), sanitized)
+        val utf8Bytes = sanitized.toByteArray(Charsets.UTF_8).size
+        org.junit.Assert.assertTrue("Expected <= 150 bytes, got $utf8Bytes", utf8Bytes <= 150)
+        assertEquals("A".repeat(150), sanitized)
     }
 
     @Test
@@ -74,7 +75,32 @@ class MediaStoreSaverTest {
     fun sanitizeFileName_truncatesLongPolishTitleSafely() {
         val longPolish = "Zażółć gęślą jaźń ".repeat(20)
         val sanitized = MediaStoreSaver.sanitizeFileName(longPolish)
-        org.junit.Assert.assertTrue(sanitized.length <= 120)
+        val utf8Bytes = sanitized.toByteArray(Charsets.UTF_8).size
+        org.junit.Assert.assertTrue("Expected <= 150 bytes, got $utf8Bytes", utf8Bytes <= 150)
         org.junit.Assert.assertFalse(sanitized.endsWith("."))
+        org.junit.Assert.assertFalse(sanitized.endsWith(" "))
+    }
+
+    @Test
+    fun sanitizeFileName_truncatesEmojisSafely_neverSplitsSurrogatePairs() {
+        val emojiTitle = "🎬🎵🔥🚀✨🎉".repeat(15) // Multi-byte UTF-8 4-byte emojis
+        val sanitized = MediaStoreSaver.sanitizeFileName(emojiTitle)
+        val utf8Bytes = sanitized.toByteArray(Charsets.UTF_8).size
+        org.junit.Assert.assertTrue("Expected <= 150 bytes, got $utf8Bytes", utf8Bytes <= 150)
+        // Ensure no lone high surrogate is left at the end
+        org.junit.Assert.assertFalse(Character.isHighSurrogate(sanitized.last()))
+    }
+
+    @Test
+    fun sanitizeFileName_stripsControlAndNullCharacters() {
+        val dirtyTitle = "Cool\u0000Video\r\nTitle\tWith|Bad*Chars?"
+        val sanitized = MediaStoreSaver.sanitizeFileName(dirtyTitle)
+        org.junit.Assert.assertFalse(sanitized.contains('\u0000'))
+        org.junit.Assert.assertFalse(sanitized.contains('\r'))
+        org.junit.Assert.assertFalse(sanitized.contains('\n'))
+        org.junit.Assert.assertFalse(sanitized.contains('\t'))
+        org.junit.Assert.assertFalse(sanitized.contains('|'))
+        org.junit.Assert.assertFalse(sanitized.contains('*'))
+        org.junit.Assert.assertFalse(sanitized.contains('?'))
     }
 }

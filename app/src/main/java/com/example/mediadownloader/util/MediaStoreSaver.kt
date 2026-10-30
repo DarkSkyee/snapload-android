@@ -20,19 +20,39 @@ object MediaStoreSaver {
 
     /**
      * Sanitizes a title string so it can be safely used as a filename.
-     * Enforces a maximum length to prevent OS 'File name too long' (ENAMETOOLONG) errors.
+     * Enforces a maximum UTF-8 byte length (maxBytes = 150) on code point boundaries
+     * to strictly prevent OS 'File name too long' (ENAMETOOLONG / Errno 36) errors
+     * across all filesystems (ext4, f2fs, FAT32) even with multi-byte UTF-8 titles (Polish, emojis),
+     * while guaranteeing surrogate pairs are never split.
      */
-    fun sanitizeFileName(title: String, defaultName: String = "media", maxChars: Int = 120): String {
-        val sanitized = title.replace("[\\\\/:*?\"<>|]".toRegex(), "_")
+    fun sanitizeFileName(title: String, defaultName: String = "media", maxBytes: Int = 150): String {
+        val sanitized = title.replace("[\\\\/:*?\"<>|\\x00-\\x1F]".toRegex(), "_")
             .replace("\\s+".toRegex(), " ")
             .trim()
         val base = sanitized.ifBlank { defaultName }
         val trimmed = base.trimEnd { it == ' ' || it == '.' }
-        val truncated = if (trimmed.length > maxChars) {
-            trimmed.take(maxChars).trimEnd { it == ' ' || it == '.' }
-        } else {
-            trimmed
+        if (trimmed.isEmpty()) return defaultName
+
+        val utf8Bytes = trimmed.toByteArray(Charsets.UTF_8)
+        if (utf8Bytes.size <= maxBytes) {
+            return trimmed.ifBlank { defaultName }
         }
+
+        var byteCount = 0
+        var charIndex = 0
+        val len = trimmed.length
+        while (charIndex < len) {
+            val codePoint = trimmed.codePointAt(charIndex)
+            val charCount = Character.charCount(codePoint)
+            val cpBytes = String(Character.toChars(codePoint)).toByteArray(Charsets.UTF_8).size
+            if (byteCount + cpBytes > maxBytes) {
+                break
+            }
+            byteCount += cpBytes
+            charIndex += charCount
+        }
+
+        val truncated = trimmed.substring(0, charIndex).trimEnd { it == ' ' || it == '.' }
         return truncated.ifBlank { defaultName }
     }
 
