@@ -16,6 +16,8 @@ import com.example.mediadownloader.model.VideoFormat
 import com.example.mediadownloader.model.VideoQuality
 import com.example.mediadownloader.util.LinkParser
 import com.example.mediadownloader.util.SpotifyHelper
+import com.example.mediadownloader.util.SpotifyTrack
+import com.example.mediadownloader.util.TrackMatcher
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import kotlinx.coroutines.Dispatchers
@@ -88,11 +90,11 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                             PlaylistItem(
                                 id = "sp_$idx",
                                 index = idx + 1,
-                                title = track.title,
+                                title = "${track.artist} - ${track.title}",
                                 author = track.artist,
                                 durationSeconds = track.durationSeconds,
                                 thumbnailUrl = track.thumbnailUrl ?: spotifyPlaylist.thumbnailUrl,
-                                sourceUrl = track.searchQuery
+                                sourceUrl = track.spotifyUrl ?: track.searchQuery
                             )
                         }
                         val playlistMeta = PlaylistMetadata(
@@ -264,8 +266,13 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
 
             if (platform == LinkParser.Platform.SPOTIFY) {
                 isAudioOnlySource = true
+                onProgress(3f, 0L, "Resolving Spotify track...")
                 val spTrack = SpotifyHelper.fetchTrack(url)
-                targetUrl = spTrack?.searchQuery ?: "ytsearch1:$url audio"
+                if (spTrack != null) {
+                    targetUrl = resolveBestYouTubeMatch(spTrack, onProgress)
+                } else {
+                    targetUrl = "ytsearch1:$url"
+                }
             } else if (platform == LinkParser.Platform.YOUTUBE_MUSIC && !url.contains("watch")) {
                 isAudioOnlySource = true
             }
@@ -529,6 +536,47 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                 append(String.format(" • ETA %02d:%02d", m, s))
             }
         }
+    }
+
+    private fun resolveBestYouTubeMatch(
+        track: SpotifyTrack,
+        onProgress: (progress: Float, etaSeconds: Long, statusText: String) -> Unit
+    ): String {
+        try {
+            onProgress(5f, 0L, "Matching best audio...")
+            val cleanQuery = SpotifyHelper.buildSearchQuery(
+                track.title,
+                track.artists,
+                track.artist
+            ).removePrefix("ytsearch1:")
+            val searchQuery = "ytsearch10:$cleanQuery"
+            Log.d(TAG, "Resolving Spotify match with query: $searchQuery (target duration: ${track.durationSeconds}s)")
+
+            val request = YoutubeDLRequest(searchQuery).apply {
+                addOption("--flat-playlist")
+                addOption("-J")
+                addOption("--no-warnings")
+            }
+            val response = YoutubeDL.getInstance().execute(request)
+            val candidates = TrackMatcher.parseCandidates(response.out)
+            val best = TrackMatcher.findBestCandidate(
+                candidates = candidates,
+                trackTitle = track.title,
+                artists = track.artists.ifEmpty { listOf(track.artist) },
+                durationSeconds = track.durationSeconds
+            )
+
+            if (best != null) {
+                val matchedUrl = "https://www.youtube.com/watch?v=${best.id}"
+                Log.i(TAG, "Successfully matched Spotify track '${track.title}' to YouTube video '${best.title}' (${best.id})")
+                return matchedUrl
+            } else {
+                Log.w(TAG, "No strong match found for Spotify track '${track.title}', falling back to: ${track.searchQuery}")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to resolve YouTube match via candidate search: ${e.message}", e)
+        }
+        return track.searchQuery
     }
 
     private fun String.equalsIgnoreCase(other: String): Boolean =
