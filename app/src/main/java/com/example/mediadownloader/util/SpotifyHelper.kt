@@ -13,9 +13,11 @@ import java.util.regex.Pattern
 data class SpotifyTrack(
     val title: String,
     val artist: String,
+    val artists: List<String> = emptyList(),
     val durationSeconds: Long = 0L,
     val thumbnailUrl: String? = null,
-    val searchQuery: String = "ytsearch1:$artist - $title audio"
+    val spotifyUrl: String? = null,
+    val searchQuery: String = ""
 )
 
 data class SpotifyPlaylist(
@@ -30,6 +32,26 @@ object SpotifyHelper {
     private const val USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
+    fun buildSearchQuery(title: String, artists: List<String> = emptyList(), artist: String = ""): String {
+        val cleanTitle = TrackMatcher.cleanTitleForSearch(title)
+        val primaryArtist = artists.firstOrNull()?.let { TrackMatcher.cleanArtistForSearch(it) }
+            ?.takeIf { it.isNotBlank() }
+            ?: TrackMatcher.cleanArtistForSearch(artist.substringBefore(",").substringBefore("&")).takeIf { it.isNotBlank() }
+            ?: TrackMatcher.cleanArtistForSearch(artist)
+
+        val secondArtist = artists.getOrNull(1)?.let { TrackMatcher.cleanArtistForSearch(it) }
+            ?.takeIf { it.isNotBlank() && it.length < 25 }
+
+        val artistPart = if (secondArtist != null && secondArtist != primaryArtist) {
+            "$primaryArtist $secondArtist"
+        } else {
+            primaryArtist
+        }
+
+        val searchTerms = if (artistPart.isNotBlank()) "$artistPart $cleanTitle" else cleanTitle
+        return "ytsearch1:$searchTerms"
+    }
+
     suspend fun fetchTrack(url: String): SpotifyTrack? = withContext(Dispatchers.IO) {
         try {
             val oembedUrl = "https://open.spotify.com/oembed?url=${java.net.URLEncoder.encode(url, "UTF-8")}"
@@ -42,6 +64,8 @@ object SpotifyHelper {
             // Extract artist if possible, oembed title is often "Title" or "Artist - Title"
             var title = fullTitle
             var artist = "Spotify"
+            val artistList = mutableListOf<String>()
+            var durationSeconds = 0L
 
             var thumbnail = thumb
             val embedUrl = toEmbedUrl(url)
@@ -59,20 +83,29 @@ object SpotifyHelper {
                         title = entity.optString("name", title).ifBlank { entity.optString("title", title) }
                         val artistsArray = entity.optJSONArray("artists")
                         if (artistsArray != null && artistsArray.length() > 0) {
-                            val names = mutableListOf<String>()
                             for (i in 0 until artistsArray.length()) {
                                 val aObj = artistsArray.optJSONObject(i)
                                 if (aObj != null) {
                                     val n = aObj.optString("name")
-                                    if (n.isNotBlank()) names.add(n)
+                                    if (n.isNotBlank()) artistList.add(n)
                                 }
                             }
-                            if (names.isNotEmpty()) {
-                                artist = names.joinToString(", ")
+                            if (artistList.isNotEmpty()) {
+                                artist = artistList.joinToString(", ")
                             }
                         } else {
                             val subtitle = entity.optString("subtitle")
-                            if (subtitle.isNotBlank()) artist = subtitle
+                            if (subtitle.isNotBlank()) {
+                                artist = subtitle
+                                artistList.add(subtitle)
+                            }
+                        }
+
+                        val durMs = entity.optLong("duration", 0L).takeIf { it > 0L }
+                            ?: entity.optLong("duration_ms", 0L).takeIf { it > 0L }
+                            ?: entity.optLong("durationMs", 0L)
+                        if (durMs > 0L) {
+                            durationSeconds = durMs / 1000L
                         }
 
                         if (thumbnail.isNullOrBlank()) {
@@ -82,12 +115,17 @@ object SpotifyHelper {
                 }
             }
 
+            val query = buildSearchQuery(title, artistList, artist)
+            val cleanUrl = resolveSpotifyUrl(url)
+
             SpotifyTrack(
                 title = title,
                 artist = artist,
-                durationSeconds = 0L,
+                artists = artistList,
+                durationSeconds = durationSeconds,
                 thumbnailUrl = thumbnail,
-                searchQuery = "ytsearch1:$artist - $title audio"
+                spotifyUrl = cleanUrl,
+                searchQuery = query
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to resolve Spotify track $url: ${e.message}", e)
@@ -126,14 +164,25 @@ object SpotifyHelper {
                             val tObj = trackList.optJSONObject(i) ?: continue
                             val tTitle = tObj.optString("title", "Track ${i + 1}")
                             val tArtist = tObj.optString("subtitle", author)
-                            val durationMs = tObj.optLong("duration", 0L)
+                            val durationMs = tObj.optLong("duration", 0L).takeIf { it > 0L }
+                                ?: tObj.optLong("duration_ms", 0L).takeIf { it > 0L }
+                                ?: tObj.optLong("durationMs", 0L)
+                            val uriStr = tObj.optString("uri")
+                            val trackId = if (uriStr.startsWith("spotify:track:")) uriStr.removePrefix("spotify:track:") else null
+                            val spotifyUrl = if (!trackId.isNullOrBlank()) "https://open.spotify.com/track/$trackId" else null
+                            val artistsList = if (tArtist.isNotBlank()) {
+                                tArtist.split(",", ";", " feat.", " ft.", " & ").map { it.trim() }.filter { it.isNotBlank() }
+                            } else emptyList()
+                            val query = buildSearchQuery(tTitle, artistsList, tArtist)
                             tracks.add(
                                 SpotifyTrack(
                                     title = tTitle,
                                     artist = tArtist,
+                                    artists = artistsList,
                                     durationSeconds = durationMs / 1000L,
                                     thumbnailUrl = thumbnail,
-                                    searchQuery = "ytsearch1:$tArtist - $tTitle audio"
+                                    spotifyUrl = spotifyUrl,
+                                    searchQuery = query
                                 )
                             )
                         }
