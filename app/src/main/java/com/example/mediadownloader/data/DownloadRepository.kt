@@ -264,14 +264,17 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
             var targetUrl = url
             var isAudioOnlySource = false
 
-            if (platform == LinkParser.Platform.SPOTIFY) {
+            val isSpotify = platform == LinkParser.Platform.SPOTIFY || url.startsWith("spotify:", ignoreCase = true)
+
+            if (isSpotify) {
                 isAudioOnlySource = true
                 onProgress(3f, 0L, "Resolving Spotify track...")
-                val spTrack = SpotifyHelper.fetchTrack(url)
+                val cached = SpotifyHelper.getCachedTrack(url)
+                val spTrack = cached ?: SpotifyHelper.fetchTrack(url)
                 if (spTrack != null) {
                     targetUrl = resolveBestYouTubeMatch(spTrack, onProgress)
                 } else {
-                    targetUrl = "ytsearch1:$url"
+                    targetUrl = if (url.startsWith("http")) "ytsearch1:$url" else url
                 }
             } else if (platform == LinkParser.Platform.YOUTUBE_MUSIC && !url.contains("watch")) {
                 isAudioOnlySource = true
@@ -544,9 +547,10 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
     ): String {
         try {
             onProgress(5f, 0L, "Matching best audio...")
+            val artists = if (track.artists.isNotEmpty()) track.artists else SpotifyHelper.parseArtistList(track.artist)
             val cleanQuery = SpotifyHelper.buildSearchQuery(
                 track.title,
-                track.artists,
+                artists,
                 track.artist
             ).removePrefix("ytsearch1:")
             val searchQuery = "ytsearch10:$cleanQuery"
@@ -559,12 +563,37 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
             }
             val response = YoutubeDL.getInstance().execute(request)
             val candidates = TrackMatcher.parseCandidates(response.out)
-            val best = TrackMatcher.findBestCandidate(
+            var best = TrackMatcher.findBestCandidate(
                 candidates = candidates,
                 trackTitle = track.title,
-                artists = track.artists.ifEmpty { listOf(track.artist) },
+                artists = artists.ifEmpty { listOf(track.artist) },
                 durationSeconds = track.durationSeconds
             )
+
+            // Secondary search attempt if no strong candidate found in initial search
+            if (best == null && artists.isNotEmpty()) {
+                val primary = artists.first()
+                val cleanTitle = TrackMatcher.cleanTitleForSearch(track.title)
+                val secondaryQuery = "ytsearch10:\"$primary\" \"$cleanTitle\""
+                Log.d(TAG, "Retrying candidate search with exact query: $secondaryQuery")
+                try {
+                    val req2 = YoutubeDLRequest(secondaryQuery).apply {
+                        addOption("--flat-playlist")
+                        addOption("-J")
+                        addOption("--no-warnings")
+                    }
+                    val resp2 = YoutubeDL.getInstance().execute(req2)
+                    val cand2 = TrackMatcher.parseCandidates(resp2.out)
+                    best = TrackMatcher.findBestCandidate(
+                        candidates = cand2,
+                        trackTitle = track.title,
+                        artists = artists,
+                        durationSeconds = track.durationSeconds
+                    )
+                } catch (e2: Exception) {
+                    Log.w(TAG, "Secondary candidate search failed: ${e2.message}")
+                }
+            }
 
             if (best != null) {
                 val matchedUrl = "https://www.youtube.com/watch?v=${best.id}"
