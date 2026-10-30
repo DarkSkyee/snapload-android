@@ -5,9 +5,20 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,9 +28,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -95,6 +103,7 @@ import com.example.mediadownloader.model.PlaylistItemStatus
 import com.example.mediadownloader.ui.components.AppBrandHeader
 import com.example.mediadownloader.ui.components.AppMenuBottomSheet
 import com.example.mediadownloader.ui.components.BouncyButton
+import com.example.mediadownloader.ui.components.bouncyClickable
 import com.example.mediadownloader.ui.components.MediaConfigSelector
 import com.example.mediadownloader.util.LinkParser
 import kotlinx.coroutines.launch
@@ -267,8 +276,8 @@ fun MainScreen(
             item {
                 AnimatedVisibility(
                     visible = uiState.isFetchingMetadata || uiState.metadata != null || uiState.metadataError != null,
-                    enter = fadeIn(),
-                    exit = fadeOut()
+                    enter = fadeIn(animationSpec = tween(220)) + expandVertically(animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow)),
+                    exit = fadeOut(animationSpec = tween(180)) + shrinkVertically(animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
                 ) {
                     MetadataPreviewCard(
                         isLoading = uiState.isFetchingMetadata,
@@ -340,8 +349,8 @@ fun MainScreen(
             item {
                 AnimatedVisibility(
                     visible = downloadState !is DownloadUiState.Idle,
-                    enter = fadeIn(),
-                    exit = fadeOut()
+                    enter = fadeIn(animationSpec = tween(220)) + expandVertically(animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow)),
+                    exit = fadeOut(animationSpec = tween(180)) + shrinkVertically(animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
                 ) {
                     DownloadStatusCard(
                         state = downloadState,
@@ -359,7 +368,8 @@ fun MainScreen(
                                     context,
                                     context.getString(R.string.open_file_prompt),
                                     Toast.LENGTH_SHORT
-                                ).show()
+                                )
+                                    .show()
                             }
                         }
                     )
@@ -561,7 +571,11 @@ fun UrlInputCard(
                     Text(stringResource(R.string.paste_from_clipboard))
                 }
 
-                if (platform != LinkParser.Platform.UNKNOWN) {
+                AnimatedVisibility(
+                    visible = platform != LinkParser.Platform.UNKNOWN,
+                    enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.88f),
+                    exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.88f)
+                ) {
                     val (label, bgColor, textColor) = when (platform) {
                         LinkParser.Platform.YOUTUBE -> Triple(
                             stringResource(R.string.platform_youtube),
@@ -1206,7 +1220,7 @@ fun RecentDownloadItemRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onOpen() }
+                .bouncyClickable(scaleDown = 0.98f) { onOpen() }
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
