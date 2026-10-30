@@ -16,6 +16,7 @@ import java.util.zip.ZipInputStream
 object FFmpegEngineManager {
     private const val TAG = "FFmpegManager"
     private val FFMPEG_RELEASE_URLS = listOf(
+        "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.2/ffmpeg-arm64-v8a.zip",
         "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.1/ffmpeg-arm64-v8a.zip",
         "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.0/ffmpeg-arm64-v8a.zip"
     )

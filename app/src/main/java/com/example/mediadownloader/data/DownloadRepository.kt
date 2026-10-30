@@ -422,9 +422,9 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
             val newVersion = YoutubeDL.getInstance().versionName(context) ?: "unknown"
             preferences.lastEngineUpdateCheck = System.currentTimeMillis()
             Result.success("yt-dlp engine updated ($status). Version: $newVersion")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to update yt-dlp engine: ${e.message}", e)
-            Result.failure(e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to update yt-dlp engine: ${t.message}", t)
+            Result.failure(if (t is Exception) t else RuntimeException(t))
         }
     }
 
@@ -447,7 +447,7 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
             } else {
                 "Initializing..."
             }
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             "Ready"
         }
     }

@@ -15,8 +15,8 @@ android {
         applicationId = "com.example.mediadownloader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 9
-        versionName = "3.0.1"
+        versionCode = 10
+        versionName = "3.0.2"
         ndk {
             abiFilters.clear()
             abiFilters.add("arm64-v8a")
@@ -38,7 +38,7 @@ android {
             enableV1Signing = true
             enableV2Signing = true
             enableV3Signing = true
-            enableV4Signing = true
+            enableV4Signing = false
         }
     }
 
@@ -70,6 +70,9 @@ android {
         excludes += "/META-INF/DEPENDENCIES"
         excludes += "/META-INF/LICENSE*"
         excludes += "/META-INF/NOTICE*"
+        excludes += "/META-INF/*.version"
+        excludes += "/META-INF/*.properties"
+        excludes += "/META-INF/version-control-info.textproto"
       }
     }
 }

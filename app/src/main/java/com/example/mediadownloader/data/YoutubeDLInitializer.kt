@@ -24,14 +24,19 @@ object YoutubeDLInitializer {
         mutex.withLock {
             if (isInitialized) return@withLock true
             try {
-                Log.d(TAG, "Initializing YoutubeDL...")
+                Log.d(TAG, "Initializing YoutubeDL engine...")
                 YoutubeDL.getInstance().init(context.applicationContext)
                 isInitialized = true
-                val version = YoutubeDL.getInstance().versionName(context.applicationContext)
+                val version = try {
+                    YoutubeDL.getInstance().versionName(context.applicationContext)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Could not query engine version: ${t.message}")
+                    null
+                }
                 Log.i(TAG, "YoutubeDL initialized successfully. Engine version: $version")
                 true
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to initialize YoutubeDL / FFmpeg: ${e.message}", e)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to initialize YoutubeDL / FFmpeg: ${t.message}", t)
                 false
             }
         }

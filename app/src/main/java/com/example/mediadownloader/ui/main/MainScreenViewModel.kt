@@ -117,13 +117,13 @@ class MainScreenViewModel(
         viewModelScope.launch {
             try {
                 repository.checkAndAutoUpdateEngineIfNeeded(force = false)
-            } catch (_: Exception) {}
+            } catch (_: Throwable) {}
 
             try {
                 if (preferences?.autoUpdateApp != false) {
                     checkForAppUpdates(manual = false)
                 }
-            } catch (_: Exception) {}
+            } catch (_: Throwable) {}
         }
     }
 

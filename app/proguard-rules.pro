@@ -15,6 +15,14 @@
 -keep class coil.** { *; }
 -dontwarn coil.**
 
-# KotlinX Serialization
--keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+# Jackson JSON processor reflection rules
+-keep class com.fasterxml.jackson.** { *; }
+-dontwarn com.fasterxml.jackson.**
+
+# Apache Commons IO & Compress
+-keep class org.apache.commons.** { *; }
+-dontwarn org.apache.commons.**
+
+# KotlinX Serialization and debugging attributes
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod,SourceFile,LineNumberTable
 -dontwarn kotlinx.serialization.**

@@ -6,8 +6,10 @@ import android.app.NotificationManager
 import android.os.Build
 import android.util.Log
 import com.example.mediadownloader.data.YoutubeDLInitializer
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class DownloaderApplication : Application() {
@@ -22,9 +24,17 @@ class DownloaderApplication : Application() {
         super.onCreate()
         createNotificationChannel()
 
-        // Warm up YoutubeDL and FFmpeg in the background on startup
-        CoroutineScope(Dispatchers.IO).launch {
-            YoutubeDLInitializer.ensureInitialized(applicationContext)
+        val startupExceptionHandler = CoroutineExceptionHandler { _, throwable ->
+            Log.e(TAG, "Unhandled error during application background warmup: ${throwable.message}", throwable)
+        }
+
+        // Warm up YoutubeDL and FFmpeg safely in the background on startup
+        CoroutineScope(Dispatchers.IO + SupervisorJob() + startupExceptionHandler).launch {
+            try {
+                YoutubeDLInitializer.ensureInitialized(applicationContext)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to initialize engine in startup warmup: ${t.message}", t)
+            }
         }
     }
 
