@@ -20,7 +20,7 @@
 
 ## 🌟 Highlights
 
-**SnapLoad** is an ultra-fast, privacy-first multimedia downloader application engineered for Android. Unlike web-based converters or remote cloud services, **SnapLoad runs 100% on-device** using local Python/yt-dlp binaries and an embedded FFmpeg multimedia engine.
+**SnapLoad** is an ultra-fast, privacy-first multimedia downloader application engineered for Android. Unlike web-based converters or remote cloud services, **SnapLoad runs 100% on-device** using local Python/yt-dlp binaries and an on-demand FFmpeg multimedia engine.
 
 Your links, files, and queries never leave your device. Downloaded media is immediately indexed and saved directly into the official Android system galleries:
 - 🎬 **Videos** &rarr; `Movies/SnapLoad` (Instantly viewable in Google Photos, Gallery & Players)
@@ -28,10 +28,20 @@ Your links, files, and queries never leave your device. Downloaded media is imme
 
 ---
 
-## ✨ Features
+## ✨ Features (v3.0)
 
+- 🪶 **Ultra-Lightweight (~20 MB base APK)**:
+  - Base APK shrunk by **>60%** (from ~56 MB down to **~20.8 MB**), packaging lightning-fast execution binaries and modular on-demand engine loading.
+- 🎧 **Spotify & YouTube Music Support**:
+  - Full native support for Spotify tracks, albums, and playlists as well as YouTube Music.
+  - Automatically fetches metadata and matches high-fidelity audio streams.
+- 📋 **Full Playlist & Album Downloads**:
+  - Download entire playlists with a single tap.
+  - Clean, live visual progress list showing per-track status, ETA, and success counts.
+- 🔄 **Smart Audio Fallback**:
+  - Selected MP4 for an audio-only platform (like Spotify)? SnapLoad automatically falls back to crystal-clear 320 kbps MP3 and notifies you seamlessly.
 - ⚡ **Instant Share Sheet & Clipboard Integration**:
-  - One-tap download directly from YouTube, Shorts, and TikTok via the system **"Share to..."** menu.
+  - One-tap download directly from YouTube, Shorts, TikTok, Spotify, and YouTube Music via the system **"Share to..."** menu.
   - Automatic URL detection and clipboard extraction.
 - 🎬 **Multi-Format Video Engine**:
   - **MP4** *(Default & Universal)*, **MKV**, and **WebM**.
@@ -40,15 +50,14 @@ Your links, files, and queries never leave your device. Downloaded media is imme
   - **MP3** *(Default 320 kbps)*, **M4A (AAC)**, **FLAC (Lossless)**, **WAV**, and **OPUS**.
   - Bitrates: **320 kbps**, **256 kbps**, **192 kbps**, and **128 kbps**.
 - 🔄 **Autonomous Auto-Updates**:
-  - **yt-dlp Core Engine**: Automatic background updates every 24 hours to stay resilient against YouTube/TikTok API changes.
+  - **yt-dlp Core Engine**: Automatic background updates every 24 hours to stay resilient against platform API changes.
   - **In-App GitHub Releases Updater**: Real-time checking and one-tap APK installation directly from GitHub Releases.
 - 🌐 **Multilingual Experience (i18n)**:
   - English *(Default)* and Polish.
   - Instant on-the-fly language switching without restarting the app.
-- 🎨 **Material 3 Expressive UI**:
-  - Smooth spring micro-interactions (*bouncy scale on press*).
-  - Animated bottom sheet settings modal.
-  - Live progress monitoring with real-time download speeds, ETA, and FFmpeg merger status indicators.
+- 🎨 **Minimalist & Refined Animations**:
+  - Polished, subtle micro-interactions (*refined spring damping*).
+  - Smooth animated progress transitions without excessive flashiness.
 
 ---
 
