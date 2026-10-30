@@ -38,20 +38,11 @@
 </p>
 
 > [!IMPORTANT]
-> ### 🛡️ Ostrzeżenie Google Play Protect / Play Protect Disclaimer
+> ### 🛡️ Google Play Protect Disclaimer
 >
-> **🇵🇱 Polski:**  
-> Podczas instalacji pobranego pliku APK system Android oraz usługa **Google Play Protect mogą (i najprawdopodobniej będą) wyświetlać ostrzeżenie**, informujące że aplikacja pochodzi z nieznanego źródła lub jest spoza sklepu Google Play.  
-> **Nie oznacza to w żaden sposób, że aplikacja zawiera złośliwy kod!** Jest to standardowy, automatyczny mechanizm bezpieczeństwa systemu Android dla wszystkich aplikacji instalowanych bezpośrednio z plików APK (tzw. *sideloading*).  
-> **SnapLoad jest projektem w 100% otwartoźródłowym (open-source)** — wszystkie operacje przetwarzania i pobierania multimediów odbywają się całkowicie lokalnie na Twoim urządzeniu, bez pośrednictwa jakichkolwiek zewnętrznych serwerów śledzących.  
-> ➡️ **Jak zainstalować:** W oknie ostrzeżenia kliknij **„Więcej szczegółów”** (More details), a następnie wybierz **„Zainstaluj mimo to”** (Install anyway).
->
-> ---
->
-> **🇬🇧 English:**  
-> When installing the downloaded APK, Android and **Google Play Protect may (and likely will) show a warning** that the app was downloaded outside the Google Play Store.  
-> **This does NOT mean the app contains harmful or malicious code!** This is purely Android's standard precautionary measure triggered for any directly installed application (*sideloaded APK*).  
-> **SnapLoad is 100% open-source** — all media processing and downloads run strictly on-device with zero tracking or telemetry servers.  
+> When installing the downloaded APK, Android and **Google Play Protect may (and likely will) display a warning** indicating that the app comes from an unknown source outside the Google Play Store.  
+> **This does NOT mean the app contains harmful or malicious code!** This is purely Android's standard automated security mechanism triggered for any directly installed application (*sideloaded APK*).  
+> **SnapLoad is 100% open-source** — all media processing and downloads execute entirely on-device, with zero telemetry or remote tracking servers.  
 > ➡️ **How to install:** In the warning prompt, tap **"More details"** and select **"Install anyway"**.
 
 ---
