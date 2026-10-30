@@ -17,6 +17,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,6 +30,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
@@ -33,6 +38,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -84,6 +91,7 @@ import com.example.mediadownloader.model.DownloadUiState
 import com.example.mediadownloader.model.DownloadedItem
 import com.example.mediadownloader.model.MediaMetadata
 import com.example.mediadownloader.model.MediaType
+import com.example.mediadownloader.model.PlaylistItemStatus
 import com.example.mediadownloader.ui.components.AppBrandHeader
 import com.example.mediadownloader.ui.components.AppMenuBottomSheet
 import com.example.mediadownloader.ui.components.BouncyButton
@@ -120,6 +128,7 @@ fun MainScreen(
     }
 
     val isDownloading = downloadState is DownloadUiState.Downloading ||
+            downloadState is DownloadUiState.PlaylistDownloading ||
             downloadState is DownloadUiState.Processing ||
             downloadState is DownloadUiState.SavingToGallery
 
@@ -282,7 +291,13 @@ fun MainScreen(
             item {
                 val isUrlValid = LinkParser.isSupported(uiState.urlInput)
 
-                val buttonLabel = if (uiState.downloadConfig.mediaType == MediaType.VIDEO) {
+                val isPlaylist = uiState.metadata?.isPlaylist == true
+                val buttonLabel = if (isPlaylist) {
+                    stringResource(
+                        R.string.download_playlist_btn,
+                        uiState.metadata?.playlistInfo?.itemCount ?: 0
+                    )
+                } else if (uiState.downloadConfig.mediaType == MediaType.VIDEO) {
                     stringResource(
                         R.string.download_video_btn,
                         uiState.downloadConfig.formatDisplayName,
@@ -304,11 +319,11 @@ fun MainScreen(
                         .height(56.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
+                        containerColor = if (isPlaylist) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
                     )
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Download,
+                        imageVector = if (isPlaylist) Icons.AutoMirrored.Filled.QueueMusic else Icons.Default.Download,
                         contentDescription = null,
                         modifier = Modifier.size(22.dp)
                     )
@@ -547,20 +562,42 @@ fun UrlInputCard(
                 }
 
                 if (platform != LinkParser.Platform.UNKNOWN) {
-                    val label = when (platform) {
-                        LinkParser.Platform.YOUTUBE -> stringResource(R.string.platform_youtube)
-                        LinkParser.Platform.TIKTOK -> stringResource(R.string.platform_tiktok)
-                        else -> stringResource(R.string.platform_supported)
+                    val (label, bgColor, textColor) = when (platform) {
+                        LinkParser.Platform.YOUTUBE -> Triple(
+                            stringResource(R.string.platform_youtube),
+                            MaterialTheme.colorScheme.primaryContainer,
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        LinkParser.Platform.YOUTUBE_MUSIC -> Triple(
+                            stringResource(R.string.platform_youtube_music),
+                            Color(0xFFFFEBEE),
+                            Color(0xFFC62828)
+                        )
+                        LinkParser.Platform.SPOTIFY -> Triple(
+                            stringResource(R.string.platform_spotify),
+                            Color(0xFFE8F5E9),
+                            Color(0xFF1B5E20)
+                        )
+                        LinkParser.Platform.TIKTOK -> Triple(
+                            stringResource(R.string.platform_tiktok),
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        else -> Triple(
+                            stringResource(R.string.platform_supported),
+                            MaterialTheme.colorScheme.secondaryContainer,
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        )
                     }
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
+                        color = bgColor
                     ) {
                         Text(
                             text = label,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = textColor,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -636,6 +673,22 @@ fun MetadataPreviewCard(
                 }
 
                 Column(modifier = Modifier.padding(14.dp)) {
+                    if (metadata.isPlaylist && metadata.playlistInfo != null) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.playlist_label, metadata.playlistInfo.itemCount),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
                     Text(
                         text = metadata.title,
                         fontWeight = FontWeight.Bold,
@@ -650,6 +703,44 @@ fun MetadataPreviewCard(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+
+                    if (metadata.isPlaylist && metadata.playlistInfo != null && metadata.playlistInfo.items.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                                .padding(8.dp)
+                        ) {
+                            metadata.playlistInfo.items.take(4).forEach { item ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "${item.index}.",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.width(24.dp)
+                                    )
+                                    Text(
+                                        text = "${item.title} ${if (item.author.isNotBlank()) "• " + item.author else ""}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                            if (metadata.playlistInfo.items.size > 4) {
+                                Text(
+                                    text = "+ ${metadata.playlistInfo.items.size - 4} more tracks...",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 24.dp, top = 2.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -688,7 +779,7 @@ fun DownloadStatusCard(
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
             containerColor = when (state) {
-                is DownloadUiState.Success -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                is DownloadUiState.Success, is DownloadUiState.PlaylistSuccess -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
                 is DownloadUiState.Error -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
                 else -> MaterialTheme.colorScheme.surfaceVariant
             }
@@ -700,6 +791,12 @@ fun DownloadStatusCard(
                 is DownloadUiState.LoadingMetadata -> {}
 
                 is DownloadUiState.Downloading -> {
+                    val animatedProgress by animateFloatAsState(
+                        targetValue = state.progress / 100f,
+                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                        label = "single_dl_progress"
+                    )
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -718,7 +815,7 @@ fun DownloadStatusCard(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     LinearProgressIndicator(
-                        progress = { state.progress / 100f },
+                        progress = { animatedProgress },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(8.dp)
@@ -748,6 +845,139 @@ fun DownloadStatusCard(
                     }
                 }
 
+                is DownloadUiState.PlaylistDownloading -> {
+                    val animatedOverall by animateFloatAsState(
+                        targetValue = (state.overallProgress / 100f).coerceIn(0f, 1f),
+                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                        label = "pl_overall_progress"
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = state.playlistTitle,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.playlist_downloading_progress,
+                                    state.currentIndex,
+                                    state.totalCount,
+                                    state.currentItemTitle
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(onClick = onCancel) {
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.cancel))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    LinearProgressIndicator(
+                        progress = { animatedOverall },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = state.speed.ifBlank { "${state.overallProgress.toInt()}%" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${state.currentIndex}/${state.totalCount}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Minimalist track list
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 200.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .padding(8.dp)
+                    ) {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(state.items) { track ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 2.dp, horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "#${track.index}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (track.status == PlaylistItemStatus.DOWNLOADING) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.width(28.dp)
+                                    )
+                                    Text(
+                                        text = track.title,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    when (track.status) {
+                                        PlaylistItemStatus.COMPLETED -> Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = Color(0xFF2E7D32),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        PlaylistItemStatus.DOWNLOADING -> CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        PlaylistItemStatus.FAILED -> Icon(
+                                            Icons.Default.Error,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        PlaylistItemStatus.PENDING -> Icon(
+                                            Icons.Default.HourglassEmpty,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 is DownloadUiState.Processing -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -771,6 +1001,35 @@ fun DownloadStatusCard(
                 }
 
                 is DownloadUiState.Success -> {
+                    if (state.fallbackNotice != null) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFFFFF3E0),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = Color(0xFFE65100),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = state.fallbackNotice,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Color(0xFFE65100),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
@@ -815,6 +1074,78 @@ fun DownloadStatusCard(
                         }
 
                         OutlinedButton(
+                            onClick = onReset,
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(stringResource(R.string.close))
+                        }
+                    }
+                }
+
+                is DownloadUiState.PlaylistSuccess -> {
+                    if (state.fallbackNotice != null) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFFFFF3E0),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = Color(0xFFE65100),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = state.fallbackNotice,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Color(0xFFE65100),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF2E7D32),
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(
+                                    R.string.playlist_success_summary,
+                                    state.successCount,
+                                    state.totalCount
+                                ),
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1B5E20)
+                            )
+                            Text(
+                                text = state.playlistTitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Button(
                             onClick = onReset,
                             shape = RoundedCornerShape(10.dp)
                         ) {
