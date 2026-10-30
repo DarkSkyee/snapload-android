@@ -58,6 +58,7 @@ class MainScreenViewModelTest {
         assertFalse(state.isFetchingMetadata)
         assertNull(state.metadata)
         assertEquals("2026.01.01", state.engineVersion)
+        assertFalse(state.quickDownloadOnShare)
     }
 
     @Test
@@ -157,6 +158,17 @@ class MainScreenViewModelTest {
 
         viewModel.setAutoUpdateApp(false)
         assertFalse(viewModel.uiState.value.autoUpdateApp)
+    }
+
+    @Test
+    fun setQuickDownloadOnShare_updatesState() {
+        assertFalse(viewModel.uiState.value.quickDownloadOnShare)
+
+        viewModel.setQuickDownloadOnShare(true)
+        assertTrue(viewModel.uiState.value.quickDownloadOnShare)
+
+        viewModel.setQuickDownloadOnShare(false)
+        assertFalse(viewModel.uiState.value.quickDownloadOnShare)
     }
 
     @Test
