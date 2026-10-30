@@ -286,13 +286,12 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
             }
 
             // Ensure FFmpeg is ready if required for audio extraction or video merging
-            val needsFfmpeg = effectiveConfig.mediaType == MediaType.AUDIO ||
+            val isAudioNeeded = effectiveConfig.mediaType == MediaType.AUDIO ||
                     isAudioOnlySource ||
                     platform == LinkParser.Platform.SPOTIFY ||
-                    platform == LinkParser.Platform.YOUTUBE_MUSIC ||
-                    !FFmpegEngineManager.isInstalled(context)
+                    platform == LinkParser.Platform.YOUTUBE_MUSIC
 
-            if (needsFfmpeg && !FFmpegEngineManager.isInstalled(context)) {
+            if (!FFmpegEngineManager.isInstalled(context)) {
                 onProgress(5f, 0L, "Preparing media converter...")
                 val installed = try {
                     FFmpegEngineManager.ensureFFmpegInstalled(context) { pct ->
@@ -302,8 +301,8 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                     Log.e(TAG, "FFmpeg setup error: ${t.message}", t)
                     false
                 }
-                if (!installed) {
-                    Log.e(TAG, "FFmpeg installation failed before executing download")
+                if (!installed && isAudioNeeded) {
+                    Log.e(TAG, "FFmpeg installation failed before executing audio conversion")
                     return@withContext Result.failure(
                         IllegalStateException("FFmpeg media converter is not installed. Please check network connection and retry.")
                     )
@@ -317,6 +316,7 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                 addOption("-o", outputTemplate)
                 addOption("--no-mtime")
                 addOption("--no-playlist")
+                addOption("--trim-filenames", "100")
                 addOption("--trim-file-names", "100")
                 addOption("--restrict-filenames")
                 addOption("--ffmpeg-location", FFmpegEngineManager.getFFmpegLocation(context))
@@ -387,6 +387,7 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                     addOption("-o", outputTemplate)
                     addOption("--no-mtime")
                     addOption("--no-playlist")
+                    addOption("--trim-filenames", "100")
                     addOption("--trim-file-names", "100")
                     addOption("--restrict-filenames")
                     addOption("--ffmpeg-location", FFmpegEngineManager.getFFmpegLocation(context))

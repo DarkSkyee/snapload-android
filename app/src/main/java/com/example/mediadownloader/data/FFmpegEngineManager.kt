@@ -16,6 +16,7 @@ import java.util.zip.ZipInputStream
 object FFmpegEngineManager {
     private const val TAG = "FFmpegManager"
     private val FFMPEG_RELEASE_URLS = listOf(
+        "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.5/ffmpeg-arm64-v8a.zip",
         "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.4/ffmpeg-arm64-v8a.zip",
         "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.3/ffmpeg-arm64-v8a.zip",
         "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.2/ffmpeg-arm64-v8a.zip",
@@ -66,7 +67,7 @@ object FFmpegEngineManager {
         val libDir = File(dir, "usr/lib")
         if (!libDir.exists() || !libDir.isDirectory) return false
 
-        // Check key media libraries exist and have genuine ELF binaries
+        // Check key media libraries exist, have genuine ELF binaries, and are not corrupt placeholders
         val keyLibraries = listOf("libavcodec", "libavformat", "libavutil", "libswscale", "libswresample")
         val files = libDir.listFiles() ?: return false
         for (key in keyLibraries) {
@@ -74,12 +75,10 @@ object FFmpegEngineManager {
             if (matching.isEmpty() || !matching.any { isValidElf(it) || it.length() > 50 * 1024L }) {
                 return false
             }
-        }
-
-        // Must not contain unresolved corrupt placeholders
-        val corruptPlaceholders = libDir.walkTopDown().filter { it.isFile && isCorruptPlaceholder(it) }.count()
-        if (corruptPlaceholders > 0) {
-            return false
+            val headFile = File(libDir, "$key.so")
+            if (headFile.exists() && isCorruptPlaceholder(headFile)) {
+                return false
+            }
         }
 
         // Check binDir contains valid ffmpeg and ffprobe aliases, or create them from nativeLibraryDir
@@ -137,26 +136,34 @@ object FFmpegEngineManager {
     }
 
     fun isCorruptPlaceholder(file: File): Boolean {
-        if (!file.exists() || file.isDirectory) return false
+        if (!file.exists() || !file.isFile) return false
         if (isSymlink(file)) return false
-        if (file.length() in 1..1024L) {
-            if (isValidElf(file)) return false
-            val lower = file.name.lowercase()
-            if (lower.endsWith(".txt") || lower.endsWith(".md") || lower.endsWith(".pc") ||
-                lower.endsWith(".h") || lower.endsWith(".c") || lower.endsWith(".json") ||
-                lower.endsWith(".xml") || lower.endsWith(".version") || lower.endsWith(".cmake") ||
-                lower.endsWith(".pc.in") || lower.endsWith(".conf") || lower == "license") {
-                return false
-            }
-            val content = try {
-                file.readText().trim()
-            } catch (_: Throwable) { "" }
-            if (content.isEmpty() || content.length > 255 || content.contains('\n') || content.contains('\r') || content.contains(' ')) {
-                return false
-            }
-            return true
+        val len = file.length()
+        // Symlink placeholder files in the ffmpeg archive are short text targets (typically 10-80 bytes)
+        if (len !in 1L..255L) return false
+        if (isValidElf(file)) return false
+
+        val lowerName = file.name.lowercase()
+        // Symlinks are libraries (.so or .so.X) or binary aliases (ffmpeg, ffprobe)
+        val isCandidateName = lowerName.contains(".so") || lowerName == "ffmpeg" || lowerName == "ffprobe"
+        if (!isCandidateName) return false
+
+        if (lowerName.endsWith(".txt") || lowerName.endsWith(".md") || lowerName.endsWith(".pc") ||
+            lowerName.endsWith(".h") || lowerName.endsWith(".c") || lowerName.endsWith(".json") ||
+            lowerName.endsWith(".xml") || lowerName.endsWith(".version") || lowerName.endsWith(".cmake") ||
+            lowerName.endsWith(".pc.in") || lowerName.endsWith(".conf") || lowerName.endsWith(".la") ||
+            lowerName == "license" || lowerName == "copying" || lowerName == "notice") {
+            return false
         }
-        return false
+
+        val content = try {
+            file.readText().trim()
+        } catch (_: Throwable) { "" }
+
+        // Must be a clean, single-line POSIX relative path/filename without whitespace, control characters, or nulls
+        if (content.isEmpty() || content.length > 200) return false
+        val validTargetRegex = "^[a-zA-Z0-9_./-]+$".toRegex()
+        return validTargetRegex.matches(content)
     }
 
     fun resolveSymlinkTarget(file: File, baseDir: File, maxHops: Int = 10): File? {
@@ -176,17 +183,18 @@ object FFmpegEngineManager {
 
             val targetName = try {
                 val text = current.readText().trim()
-                if (text.isEmpty() || text.length > 255 || text.contains('\n') || text.contains('\r') || text.contains(' ')) {
-                    ""
-                } else {
+                if (text.length in 1..200 && "^[a-zA-Z0-9_./-]+$".toRegex().matches(text)) {
                     text
+                } else {
+                    ""
                 }
             } catch (_: Throwable) { "" }
 
             if (targetName.isEmpty()) return null
 
+            val parentDir = current.parentFile ?: baseDir
             val nextFile = try {
-                File(current.parentFile ?: baseDir, targetName).canonicalFile
+                File(parentDir, targetName).canonicalFile
             } catch (_: Throwable) {
                 null
             } ?: return null
@@ -224,6 +232,13 @@ object FFmpegEngineManager {
                 try {
                     val realTarget = resolveSymlinkTarget(file, dir)
                     if (realTarget != null && (isValidElf(realTarget) || realTarget.length() > 1024L)) {
+                        val targetCanonical = try { realTarget.canonicalPath } catch (_: Throwable) { realTarget.absolutePath }
+                        val fileCanonical = try { file.canonicalPath } catch (_: Throwable) { file.absolutePath }
+                        // Never delete if resolved target points to the file itself
+                        if (targetCanonical == fileCanonical) {
+                            continue
+                        }
+
                         file.delete()
                         var linked = false
                         try {
@@ -232,7 +247,7 @@ object FFmpegEngineManager {
                             } else {
                                 realTarget.relativeTo(file.parentFile ?: dir).path.replace('\\', '/')
                             }
-                            if (relPath.length <= 255 && !relPath.contains('\n') && !relPath.contains('\r')) {
+                            if (relPath.length <= 200 && "^[a-zA-Z0-9_./-]+$".toRegex().matches(relPath)) {
                                 android.system.Os.symlink(relPath, file.absolutePath)
                                 linked = file.exists()
                             }
@@ -350,7 +365,7 @@ object FFmpegEngineManager {
                             connectTimeout = 15000
                             readTimeout = 30000
                             instanceFollowRedirects = true
-                            setRequestProperty("User-Agent", "SnapLoad-Android/3.0.4")
+                            setRequestProperty("User-Agent", "SnapLoad-Android/3.0.5")
                         }
 
                         var responseCode = connection.responseCode
@@ -364,7 +379,7 @@ object FFmpegEngineManager {
                                 connectTimeout = 15000
                                 readTimeout = 30000
                                 instanceFollowRedirects = true
-                                setRequestProperty("User-Agent", "SnapLoad-Android/3.0.4")
+                                setRequestProperty("User-Agent", "SnapLoad-Android/3.0.5")
                             }
                             responseCode = connection.responseCode
                             redirects++
