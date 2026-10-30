@@ -283,7 +283,7 @@ class MainScreenViewModel(
         val mgr = updateManager ?: return
         val apkUrl = releaseInfo.apkDownloadUrl ?: return
 
-        val cachedApk = mgr.getDownloadedUpdateApk()
+        val cachedApk = mgr.getDownloadedUpdateApk(releaseInfo.tagName)
         if (cachedApk != null) {
             val installResult = mgr.promptInstallApk(cachedApk)
             if (installResult.isFailure) {
@@ -304,7 +304,7 @@ class MainScreenViewModel(
         _uiState.update { it.copy(isDownloadingAppUpdate = true, appUpdateProgress = 0) }
 
         viewModelScope.launch {
-            val downloadResult = mgr.downloadApk(apkUrl) { percent ->
+            val downloadResult = mgr.downloadApk(apkUrl, releaseInfo.tagName) { percent ->
                 _uiState.update { it.copy(appUpdateProgress = percent) }
             }
 

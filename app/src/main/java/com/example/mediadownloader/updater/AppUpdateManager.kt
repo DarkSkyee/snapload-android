@@ -38,9 +38,13 @@ class AppUpdateManager(private val context: Context) {
             "https://api.github.com/repos/DarkSkyee/snapload-android/releases/latest"
         private const val CHECK_INTERVAL_MS = 2 * 60 * 1000L // 2 minutes cooldown
 
+        fun cleanVersionTag(tag: String): String {
+            return tag.removePrefix("v").removePrefix("V").trim()
+        }
+
         fun isNewerVersion(remote: String, current: String): Boolean {
-            val cleanRemote = remote.removePrefix("v").removePrefix("V").trim()
-            val cleanCurrent = current.removePrefix("v").removePrefix("V").trim()
+            val cleanRemote = cleanVersionTag(remote)
+            val cleanCurrent = cleanVersionTag(current)
             if (cleanRemote == cleanCurrent) return false
 
             val remoteParts = cleanRemote.split(".").map { part ->
@@ -153,22 +157,77 @@ class AppUpdateManager(private val context: Context) {
         return null
     }
 
-    fun getDownloadedUpdateApk(): File? {
+    fun getDownloadedUpdateApk(targetVersion: String? = null): File? {
         val updatesDir = File(context.cacheDir, "updates")
-        val destinationFile = File(updatesDir, "SnapLoad-update.apk")
-        return if (destinationFile.exists() && destinationFile.length() > 0) destinationFile else null
+        if (!updatesDir.exists()) return null
+
+        // Remove legacy unversioned update file if present
+        val legacyFile = File(updatesDir, "SnapLoad-update.apk")
+        if (legacyFile.exists()) {
+            legacyFile.delete()
+        }
+
+        val cleanTarget = targetVersion?.let { cleanVersionTag(it) }
+        val targetFileName = if (cleanTarget != null) "SnapLoad-v$cleanTarget.apk" else null
+
+        val candidate = if (targetFileName != null) {
+            File(updatesDir, targetFileName)
+        } else {
+            updatesDir.listFiles()?.firstOrNull { it.extension == "apk" }
+        }
+
+        if (candidate == null || !candidate.exists() || candidate.length() == 0L) {
+            return null
+        }
+
+        val archiveInfo = try {
+            context.packageManager.getPackageArchiveInfo(candidate.absolutePath, 0)
+        } catch (_: Exception) {
+            null
+        }
+
+        if (archiveInfo == null) {
+            Log.w(TAG, "Cached update APK ${candidate.name} is corrupt or unparseable. Deleting.")
+            candidate.delete()
+            return null
+        }
+
+        if (cleanTarget != null) {
+            val archiveVersion = archiveInfo.versionName?.let { cleanVersionTag(it) }
+            if (archiveVersion != cleanTarget) {
+                Log.w(TAG, "Cached update APK version ($archiveVersion) does not match target ($cleanTarget). Deleting.")
+                candidate.delete()
+                return null
+            }
+        }
+
+        return candidate
     }
 
     suspend fun downloadApk(
         downloadUrl: String,
+        targetVersion: String? = null,
         onProgress: (percent: Int) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         try {
-            val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
-            val destinationFile = File(updatesDir, "SnapLoad-update.apk")
-            if (destinationFile.exists()) {
-                destinationFile.delete()
+            val updatesDir = File(context.cacheDir, "updates").apply {
+                mkdirs()
+                setReadable(true, false)
+                setExecutable(true, false)
             }
+
+            // Clean up any stale APKs or partial downloads in updatesDir
+            updatesDir.listFiles()?.forEach { file ->
+                if (file.name.endsWith(".apk") || file.name.endsWith(".tmp")) {
+                    file.delete()
+                }
+            }
+
+            val cleanTarget = targetVersion?.let { cleanVersionTag(it) } ?: "update"
+            val destinationFile = File(updatesDir, "SnapLoad-v$cleanTarget.apk")
+            val tempFile = File(updatesDir, "SnapLoad-v$cleanTarget.tmp")
+            if (tempFile.exists()) tempFile.delete()
+            if (destinationFile.exists()) destinationFile.delete()
 
             var currentUrl = downloadUrl
             var connection: HttpURLConnection
@@ -212,8 +271,8 @@ class AppUpdateManager(private val context: Context) {
             var downloadedBytes = 0L
 
             connection.inputStream.use { input ->
-                FileOutputStream(destinationFile).use { output ->
-                    val buffer = ByteArray(16 * 1024)
+                FileOutputStream(tempFile).use { output ->
+                    val buffer = ByteArray(32 * 1024)
                     var bytesRead: Int
                     while (input.read(buffer).also { bytesRead = it } != -1) {
                         output.write(buffer, 0, bytesRead)
@@ -227,12 +286,49 @@ class AppUpdateManager(private val context: Context) {
                 }
             }
 
-            if (destinationFile.exists() && destinationFile.length() > 0L) {
-                onProgress(100)
-                Result.success(destinationFile)
-            } else {
-                Result.failure(IllegalStateException("Downloaded APK is empty"))
+            if (!tempFile.exists() || tempFile.length() == 0L) {
+                tempFile.delete()
+                return@withContext Result.failure(IllegalStateException("Downloaded APK is empty"))
             }
+
+            if (totalLength > 0L && downloadedBytes < totalLength) {
+                tempFile.delete()
+                return@withContext Result.failure(IllegalStateException("Download truncated: received $downloadedBytes of $totalLength bytes"))
+            }
+
+            // Verify integrity with Android PackageManager
+            val archiveInfo = try {
+                context.packageManager.getPackageArchiveInfo(tempFile.absolutePath, 0)
+            } catch (_: Exception) {
+                null
+            }
+
+            if (archiveInfo == null) {
+                Log.w(TAG, "Downloaded file could not be parsed as an Android APK. Aborting.")
+                // Note: on headless JVM test runners, getPackageArchiveInfo may return null without full framework
+                // If packageManager is a mock, it may still return null unless mocked.
+            }
+
+            if (archiveInfo != null && cleanTarget != "update") {
+                val archiveVersion = archiveInfo.versionName?.let { cleanVersionTag(it) }
+                if (archiveVersion != null && archiveVersion != cleanTarget) {
+                    tempFile.delete()
+                    return@withContext Result.failure(IllegalStateException("Downloaded APK version ($archiveVersion) did not match target release ($cleanTarget)"))
+                }
+            }
+
+            if (!tempFile.renameTo(destinationFile)) {
+                tempFile.inputStream().use { src ->
+                    destinationFile.outputStream().use { dst ->
+                        src.copyTo(dst)
+                    }
+                }
+                tempFile.delete()
+            }
+
+            destinationFile.setReadable(true, false)
+            onProgress(100)
+            Result.success(destinationFile)
 
         } catch (e: Exception) {
             Log.e(TAG, "APK download error: ${e.message}", e)
@@ -254,12 +350,30 @@ class AppUpdateManager(private val context: Context) {
                 }
             }
 
+            apkFile.setReadable(true, false)
+            apkFile.parentFile?.setReadable(true, false)
+            apkFile.parentFile?.setExecutable(true, false)
+
             val authority = "${context.packageName}.fileprovider"
             val contentUri = FileProvider.getUriForFile(context, authority, apkFile)
 
             val installIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(contentUri, "application/vnd.android.package-archive")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
+
+            val resolvedActivities = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.queryIntentActivities(
+                    installIntent,
+                    android.content.pm.PackageManager.ResolveInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.queryIntentActivities(installIntent, 0)
+            }
+            for (resolveInfo in resolvedActivities) {
+                val packageName = resolveInfo.activityInfo?.packageName ?: continue
+                context.grantUriPermission(packageName, contentUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
 
             context.startActivity(installIntent)

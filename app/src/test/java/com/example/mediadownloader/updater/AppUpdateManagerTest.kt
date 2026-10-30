@@ -1,5 +1,6 @@
 package com.example.mediadownloader.updater
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -34,5 +35,13 @@ class AppUpdateManagerTest {
         assertFalse(AppUpdateManager.isNewerVersion("1.0", "1.1"))
         assertFalse(AppUpdateManager.isNewerVersion("1.0.1", "1.0.2"))
         assertFalse(AppUpdateManager.isNewerVersion("1.9.0", "1.10.0"))
+    }
+
+    @Test
+    fun cleanVersionTag_handlesPrefixesAndWhitespace() {
+        assertEquals("3.0.8", AppUpdateManager.cleanVersionTag("v3.0.8"))
+        assertEquals("3.0.8", AppUpdateManager.cleanVersionTag("V3.0.8"))
+        assertEquals("3.0.8", AppUpdateManager.cleanVersionTag("  3.0.8  "))
+        assertEquals("3.0.8", AppUpdateManager.cleanVersionTag("v 3.0.8".removePrefix("v").trim()))
     }
 }
