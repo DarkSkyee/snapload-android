@@ -11,6 +11,8 @@ object LinkParser {
 
     enum class Platform {
         YOUTUBE,
+        YOUTUBE_MUSIC,
+        SPOTIFY,
         TIKTOK,
         OTHER,
         UNKNOWN
@@ -46,8 +48,11 @@ object LinkParser {
         }
         val host = uri.host?.lowercase().orEmpty()
         return when {
+            host == "music.youtube.com" -> Platform.YOUTUBE_MUSIC
             host == "youtu.be" || host.endsWith(".youtu.be") ||
                     host == "youtube.com" || host.endsWith(".youtube.com") -> Platform.YOUTUBE
+            host == "spotify.com" || host.endsWith(".spotify.com") ||
+                    host == "spotify.link" || host.endsWith(".spotify.link") -> Platform.SPOTIFY
             host == "tiktok.com" || host.endsWith(".tiktok.com") -> Platform.TIKTOK
             isValidUrl(cleanUrl) -> Platform.OTHER
             else -> Platform.UNKNOWN
@@ -55,7 +60,35 @@ object LinkParser {
     }
 
     /**
-     * Checks if URL is supported (YouTube, TikTok, or other yt-dlp supported media URL)
+     * Determines whether the given URL points to a playlist or album.
+     */
+    fun isPlaylist(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        val cleanUrl = extractUrl(url) ?: url.trim()
+        val platform = detectPlatform(cleanUrl)
+        return when (platform) {
+            Platform.YOUTUBE, Platform.YOUTUBE_MUSIC -> {
+                cleanUrl.contains("list=", ignoreCase = true) ||
+                        cleanUrl.contains("/playlist", ignoreCase = true)
+            }
+            Platform.SPOTIFY -> {
+                cleanUrl.contains("/playlist/", ignoreCase = true) ||
+                        cleanUrl.contains("/album/", ignoreCase = true)
+            }
+            else -> cleanUrl.contains("playlist", ignoreCase = true)
+        }
+    }
+
+    /**
+     * Checks whether the given URL / platform is exclusively an audio service (e.g. Spotify, YT Music audio).
+     */
+    fun isAudioOnlyPlatform(url: String?): Boolean {
+        val platform = detectPlatform(url)
+        return platform == Platform.SPOTIFY
+    }
+
+    /**
+     * Checks if URL is supported (YouTube, YT Music, Spotify, TikTok, or other yt-dlp supported media URL)
      */
     fun isSupported(url: String?): Boolean {
         if (url.isNullOrBlank()) return false
