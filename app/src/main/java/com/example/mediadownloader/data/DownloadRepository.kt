@@ -294,8 +294,13 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
 
             if (needsFfmpeg && !FFmpegEngineManager.isInstalled(context)) {
                 onProgress(5f, 0L, "Preparing media converter...")
-                val installed = FFmpegEngineManager.ensureFFmpegInstalled(context) { pct ->
-                    onProgress(pct.toFloat().coerceIn(0f, 90f), 0L, "Setting up converter ($pct%)...")
+                val installed = try {
+                    FFmpegEngineManager.ensureFFmpegInstalled(context) { pct ->
+                        onProgress(pct.toFloat().coerceIn(0f, 90f), 0L, "Setting up converter ($pct%)...")
+                    }
+                } catch (t: Throwable) {
+                    Log.e(TAG, "FFmpeg setup error: ${t.message}", t)
+                    false
                 }
                 if (!installed) {
                     Log.e(TAG, "FFmpeg installation failed before executing download")
@@ -312,6 +317,8 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                 addOption("-o", outputTemplate)
                 addOption("--no-mtime")
                 addOption("--no-playlist")
+                addOption("--trim-file-names", "100")
+                addOption("--restrict-filenames")
                 addOption("--ffmpeg-location", FFmpegEngineManager.getFFmpegLocation(context))
 
                 if (effectiveConfig.mediaType == MediaType.VIDEO) {
@@ -360,8 +367,13 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                 // Ensure FFmpeg is installed before retrying with MP3 conversion
                 if (!FFmpegEngineManager.isInstalled(context)) {
                     onProgress(5f, 0L, "Preparing media converter...")
-                    val retryInstalled = FFmpegEngineManager.ensureFFmpegInstalled(context) { pct ->
-                        onProgress(pct.toFloat().coerceIn(0f, 90f), 0L, "Setting up converter ($pct%)...")
+                    val retryInstalled = try {
+                        FFmpegEngineManager.ensureFFmpegInstalled(context) { pct ->
+                            onProgress(pct.toFloat().coerceIn(0f, 90f), 0L, "Setting up converter ($pct%)...")
+                        }
+                    } catch (t: Throwable) {
+                        Log.e(TAG, "FFmpeg setup error on retry: ${t.message}", t)
+                        false
                     }
                     if (!retryInstalled) {
                         Log.e(TAG, "FFmpeg installation failed before retrying MP3 fallback")
@@ -375,6 +387,8 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                     addOption("-o", outputTemplate)
                     addOption("--no-mtime")
                     addOption("--no-playlist")
+                    addOption("--trim-file-names", "100")
+                    addOption("--restrict-filenames")
                     addOption("--ffmpeg-location", FFmpegEngineManager.getFFmpegLocation(context))
                     addOption("-x")
                     addOption("--audio-format", "mp3")

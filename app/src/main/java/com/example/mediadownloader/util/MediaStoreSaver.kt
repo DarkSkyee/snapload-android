@@ -20,12 +20,20 @@ object MediaStoreSaver {
 
     /**
      * Sanitizes a title string so it can be safely used as a filename.
+     * Enforces a maximum length to prevent OS 'File name too long' (ENAMETOOLONG) errors.
      */
-    fun sanitizeFileName(title: String, defaultName: String = "media"): String {
+    fun sanitizeFileName(title: String, defaultName: String = "media", maxChars: Int = 120): String {
         val sanitized = title.replace("[\\\\/:*?\"<>|]".toRegex(), "_")
             .replace("\\s+".toRegex(), " ")
             .trim()
-        return sanitized.ifBlank { defaultName }
+        val base = sanitized.ifBlank { defaultName }
+        val trimmed = base.trimEnd { it == ' ' || it == '.' }
+        val truncated = if (trimmed.length > maxChars) {
+            trimmed.take(maxChars).trimEnd { it == ' ' || it == '.' }
+        } else {
+            trimmed
+        }
+        return truncated.ifBlank { defaultName }
     }
 
     /**

@@ -54,4 +54,27 @@ class MediaStoreSaverTest {
         // Fallback
         assertEquals("application/octet-stream", MediaStoreSaver.resolveMimeType("xyz"))
     }
+
+    @Test
+    fun sanitizeFileName_truncatesExcessivelyLongTitles() {
+        val longTitle = "A".repeat(300)
+        val sanitized = MediaStoreSaver.sanitizeFileName(longTitle)
+        assertEquals(120, sanitized.length)
+        assertEquals("A".repeat(120), sanitized)
+    }
+
+    @Test
+    fun sanitizeFileName_trimsTrailingDotsAndSpaces() {
+        val titleWithDots = "Interesting Video Title...."
+        val sanitized = MediaStoreSaver.sanitizeFileName(titleWithDots)
+        assertEquals("Interesting Video Title", sanitized)
+    }
+
+    @Test
+    fun sanitizeFileName_truncatesLongPolishTitleSafely() {
+        val longPolish = "Zażółć gęślą jaźń ".repeat(20)
+        val sanitized = MediaStoreSaver.sanitizeFileName(longPolish)
+        org.junit.Assert.assertTrue(sanitized.length <= 120)
+        org.junit.Assert.assertFalse(sanitized.endsWith("."))
+    }
 }

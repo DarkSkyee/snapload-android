@@ -159,4 +159,52 @@ class FFmpegEngineManagerTest {
         assertFalse(FFmpegEngineManager.isCorruptPlaceholder(binPlaceholder))
         assertTrue(FFmpegEngineManager.isValidElf(binPlaceholder))
     }
+
+    @Test
+    fun resolveSymlinkTarget_withLongTextContent_doesNotThrowFileNameTooLong() {
+        val dir = tempFolder.newFolder("long_text")
+        val longTextFile = File(dir, "readme.txt").apply {
+            writeText("A".repeat(300))
+        }
+        val resolved = FFmpegEngineManager.resolveSymlinkTarget(longTextFile, dir)
+        assertNull(resolved)
+    }
+
+    @Test
+    fun isCorruptPlaceholder_ignoresDocumentationAndMultiLineFiles() {
+        val dir = tempFolder.newFolder("text_files")
+        val pcFile = File(dir, "libavcodec.pc").apply {
+            writeText("prefix=/usr\nlibdir=\${prefix}/lib\nName: libavcodec\n")
+        }
+        val readme = File(dir, "README.txt").apply {
+            writeText("This is ffmpeg build.\n")
+        }
+        val license = File(dir, "LICENSE").apply {
+            writeText("GNU General Public License\nVersion 3\n")
+        }
+
+        assertFalse(FFmpegEngineManager.isCorruptPlaceholder(pcFile))
+        assertFalse(FFmpegEngineManager.isCorruptPlaceholder(readme))
+        assertFalse(FFmpegEngineManager.isCorruptPlaceholder(license))
+    }
+
+    @Test
+    fun repairDirectory_safelySkipsNonPlaceholderTextFilesWithoutCrashing() {
+        val rootDir = tempFolder.newFolder("safe_skip")
+        val libDir = File(rootDir, "lib").apply { mkdirs() }
+        val pcFile = File(libDir, "libavcodec.pc").apply {
+            writeText("prefix=/usr\nlibdir=\${prefix}/lib\nName: libavcodec\n" + "A".repeat(400))
+        }
+        val realBinary = File(libDir, "libffmpeg.so.61.1.0").apply {
+            writeBytes(elfHeader + ByteArray(4000) { 0x55 })
+        }
+        val validPlaceholder = File(libDir, "libffmpeg.so.61").apply {
+            writeText("libffmpeg.so.61.1.0\n")
+        }
+
+        val repaired = FFmpegEngineManager.repairDirectory(rootDir)
+        assertEquals(1, repaired)
+        assertTrue(pcFile.exists())
+        assertTrue(FFmpegEngineManager.isValidElf(validPlaceholder))
+    }
 }
