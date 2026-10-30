@@ -2,7 +2,6 @@ package com.example.mediadownloader.data
 
 import android.content.Context
 import android.util.Log
-import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -25,12 +24,11 @@ object YoutubeDLInitializer {
         mutex.withLock {
             if (isInitialized) return@withLock true
             try {
-                Log.d(TAG, "Initializing YoutubeDL and FFmpeg...")
+                Log.d(TAG, "Initializing YoutubeDL...")
                 YoutubeDL.getInstance().init(context.applicationContext)
-                FFmpeg.getInstance().init(context.applicationContext)
                 isInitialized = true
                 val version = YoutubeDL.getInstance().versionName(context.applicationContext)
-                Log.i(TAG, "YoutubeDL and FFmpeg initialized successfully. Engine version: $version")
+                Log.i(TAG, "YoutubeDL initialized successfully. Engine version: $version")
                 true
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to initialize YoutubeDL / FFmpeg: ${e.message}", e)
