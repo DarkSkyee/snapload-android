@@ -25,6 +25,9 @@ class DownloaderApplication : Application() {
         super.onCreate()
         createNotificationChannel()
 
+        // Clean up any lingering APK files in cache on startup to prevent Play Protect scanning alerts
+        com.example.mediadownloader.updater.AppUpdateManager.cleanupUpdatesDir(this)
+
         val startupExceptionHandler = CoroutineExceptionHandler { _, throwable ->
             Log.e(TAG, "Unhandled error during application background warmup: ${throwable.message}", throwable)
         }

@@ -422,6 +422,7 @@ fun MainScreen(
             currentLanguage = uiState.currentLanguage,
             autoUpdateEngine = uiState.autoUpdateEngine,
             autoUpdateApp = uiState.autoUpdateApp,
+            quickDownloadOnShare = uiState.quickDownloadOnShare,
             engineVersion = uiState.engineVersion,
             appVersion = uiState.appVersion,
             isUpdatingEngine = uiState.isUpdatingEngine,
@@ -431,6 +432,7 @@ fun MainScreen(
             },
             onAutoUpdateEngineChange = { viewModel.setAutoUpdateEngine(it) },
             onAutoUpdateAppChange = { viewModel.setAutoUpdateApp(it) },
+            onQuickDownloadOnShareChange = { viewModel.setQuickDownloadOnShare(it) },
             onCheckAppUpdateClick = { viewModel.checkForAppUpdates(manual = true) },
             onUpdateEngineClick = { viewModel.updateEngine() },
             onDismissRequest = {

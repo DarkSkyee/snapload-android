@@ -1,9 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <cache-path name="cached_updates" path="updates" />
-    <cache-path name="cache" path="." />
-    <files-path name="files" path="." />
-    <external-cache-path name="ext_cached_updates" path="updates" />
-    <external-cache-path name="ext_cache" path="." />
-    <external-files-path name="ext_files" path="." />
+    <!-- Restricted strictly to internal cache updates directory for security -->
+    <cache-path name="updates" path="updates/" />
 </paths>

@@ -1,6 +1,17 @@
-# ProGuard rules for SnapLoad
+# ProGuard / R8 rules for SnapLoad - Optimized for Google Play Protect & stability
 
-# Preserve all app classes completely to guarantee zero startup/runtime reflection issues
+# Retain clean stack traces, annotations, and metadata (prevents ML malware heuristics)
+-keepattributes SourceFile,LineNumberTable,*Annotation*,Signature,InnerClasses,EnclosingMethod
+
+# Keep auto-updater models, JSON responses, and PackageInstaller BroadcastReceiver
+-keep class com.example.mediadownloader.updater.ReleaseInfo { *; }
+-keep class com.example.mediadownloader.updater.UpdateCheckResult** { *; }
+-keep class com.example.mediadownloader.updater.InstallReceiver { *; }
+-keep class com.example.mediadownloader.updater.AppUpdateManager** { *; }
+-keep class com.example.mediadownloader.model.** { *; }
+-keepclassmembers class com.example.mediadownloader.model.** { *; }
+
+# Preserve app components to guarantee zero startup/runtime reflection issues
 -keep class com.example.mediadownloader.** { *; }
 -keepclassmembers class com.example.mediadownloader.** { *; }
 
@@ -23,6 +34,5 @@
 -keep class org.apache.commons.** { *; }
 -dontwarn org.apache.commons.**
 
-# KotlinX Serialization and debugging attributes
--keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod,SourceFile,LineNumberTable
+# KotlinX Serialization
 -dontwarn kotlinx.serialization.**

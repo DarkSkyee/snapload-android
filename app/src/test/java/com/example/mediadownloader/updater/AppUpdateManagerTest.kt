@@ -16,10 +16,13 @@ class AppUpdateManagerTest {
 
         // Multi-digit versions
         assertTrue(AppUpdateManager.isNewerVersion("1.10.0", "1.9.0"))
+        assertTrue(AppUpdateManager.isNewerVersion("3.1.2", "3.1.1"))
+        assertTrue(AppUpdateManager.isNewerVersion("3.1.2", "3.1.0"))
 
         // With 'v' prefix
         assertTrue(AppUpdateManager.isNewerVersion("v1.2", "1.1"))
         assertTrue(AppUpdateManager.isNewerVersion("V2.0", "v1.9"))
+        assertTrue(AppUpdateManager.isNewerVersion("v3.1.2", "v3.1.1"))
 
         // With suffix (e.g. beta, rc)
         assertTrue(AppUpdateManager.isNewerVersion("1.1-beta", "1.0"))
@@ -29,12 +32,14 @@ class AppUpdateManagerTest {
         assertFalse(AppUpdateManager.isNewerVersion("1.0", "1.0"))
         assertFalse(AppUpdateManager.isNewerVersion("1.0.0", "1.0.0"))
         assertFalse(AppUpdateManager.isNewerVersion("v1.0", "1.0"))
+        assertFalse(AppUpdateManager.isNewerVersion("3.1.2", "3.1.2"))
 
         // Older version
         assertFalse(AppUpdateManager.isNewerVersion("0.9", "1.0"))
         assertFalse(AppUpdateManager.isNewerVersion("1.0", "1.1"))
         assertFalse(AppUpdateManager.isNewerVersion("1.0.1", "1.0.2"))
         assertFalse(AppUpdateManager.isNewerVersion("1.9.0", "1.10.0"))
+        assertFalse(AppUpdateManager.isNewerVersion("3.1.1", "3.1.2"))
     }
 
     @Test
@@ -42,6 +47,7 @@ class AppUpdateManagerTest {
         assertEquals("3.0.8", AppUpdateManager.cleanVersionTag("v3.0.8"))
         assertEquals("3.0.8", AppUpdateManager.cleanVersionTag("V3.0.8"))
         assertEquals("3.0.8", AppUpdateManager.cleanVersionTag("  3.0.8  "))
-        assertEquals("3.0.8", AppUpdateManager.cleanVersionTag("v 3.0.8".removePrefix("v").trim()))
+        assertEquals("3.1.2", AppUpdateManager.cleanVersionTag("v3.1.2"))
+        assertEquals("3.1.2", AppUpdateManager.cleanVersionTag("  v3.1.2  "))
     }
 }

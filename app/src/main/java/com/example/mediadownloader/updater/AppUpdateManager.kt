@@ -1,12 +1,15 @@
 package com.example.mediadownloader.updater
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
-import androidx.core.content.FileProvider
 import com.example.mediadownloader.data.AppPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -39,7 +42,7 @@ class AppUpdateManager(private val context: Context) {
         private const val CHECK_INTERVAL_MS = 2 * 60 * 1000L // 2 minutes cooldown
 
         fun cleanVersionTag(tag: String): String {
-            return tag.removePrefix("v").removePrefix("V").trim()
+            return tag.trim().removePrefix("v").removePrefix("V").trim()
         }
 
         fun isNewerVersion(remote: String, current: String): Boolean {
@@ -63,6 +66,27 @@ class AppUpdateManager(private val context: Context) {
             }
             return false
         }
+
+        /**
+         * Purge any lingering APK and temp files from the updates cache directory.
+         * Calling this on app launch and after installation prevents periodic Play Protect scanner flags.
+         */
+        fun cleanupUpdatesDir(context: Context) {
+            try {
+                val updatesDir = File(context.cacheDir, "updates")
+                if (updatesDir.exists()) {
+                    updatesDir.listFiles()?.forEach { file ->
+                        if (file.name.endsWith(".apk", ignoreCase = true) ||
+                            file.name.endsWith(".tmp", ignoreCase = true)
+                        ) {
+                            file.delete()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to cleanup updates directory: ${e.message}")
+            }
+        }
     }
 
     private val preferences = AppPreferences(context)
@@ -72,7 +96,7 @@ class AppUpdateManager(private val context: Context) {
             val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 context.packageManager.getPackageInfo(
                     context.packageName,
-                    android.content.pm.PackageManager.PackageInfoFlags.of(0)
+                    PackageManager.PackageInfoFlags.of(0)
                 )
             } else {
                 @Suppress("DEPRECATION")
@@ -82,6 +106,87 @@ class AppUpdateManager(private val context: Context) {
         } catch (_: Exception) {
             "1.0"
         }
+    }
+
+    fun getCurrentVersionCode(): Long {
+        return try {
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.versionCode.toLong()
+            }
+        } catch (_: Exception) {
+            1L
+        }
+    }
+
+    /**
+     * Verifies that the APK is non-empty, parseable by PackageManager, targets this app's package name,
+     * and has a versionCode strictly greater than the currently installed version.
+     */
+    fun verifyApkArchive(apkFile: File, expectedTargetVersion: String? = null): Result<PackageInfo> {
+        if (!apkFile.exists() || apkFile.length() == 0L) {
+            return Result.failure(IllegalStateException("APK file is missing or empty"))
+        }
+
+        val archiveInfo = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageArchiveInfo(
+                    apkFile.absolutePath,
+                    PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+            }
+        } catch (e: Exception) {
+            return Result.failure(IllegalStateException("Failed to parse package archive: ${e.message}"))
+        } ?: return Result.failure(IllegalStateException("File is corrupt or not a valid Android APK archive"))
+
+        if (archiveInfo.packageName != context.packageName) {
+            apkFile.delete()
+            return Result.failure(
+                SecurityException("APK package name mismatch: expected ${context.packageName}, got ${archiveInfo.packageName}")
+            )
+        }
+
+        val currentCode = getCurrentVersionCode()
+        val newCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            archiveInfo.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            archiveInfo.versionCode.toLong()
+        }
+
+        if (newCode <= currentCode) {
+            apkFile.delete()
+            return Result.failure(
+                IllegalStateException("Downloaded APK versionCode ($newCode) is not newer than current ($currentCode)")
+            )
+        }
+
+        if (expectedTargetVersion != null) {
+            val cleanExpected = cleanVersionTag(expectedTargetVersion)
+            val cleanArchiveVersion = archiveInfo.versionName?.let { cleanVersionTag(it) }
+            if (cleanArchiveVersion != null && cleanArchiveVersion != cleanExpected) {
+                apkFile.delete()
+                return Result.failure(
+                    IllegalStateException("Downloaded APK version ($cleanArchiveVersion) does not match expected target ($cleanExpected)")
+                )
+            }
+        }
+
+        return Result.success(archiveInfo)
     }
 
     suspend fun checkForUpdates(force: Boolean = false): UpdateCheckResult = withContext(Dispatchers.IO) {
@@ -173,32 +278,18 @@ class AppUpdateManager(private val context: Context) {
         val candidate = if (targetFileName != null) {
             File(updatesDir, targetFileName)
         } else {
-            updatesDir.listFiles()?.firstOrNull { it.extension == "apk" }
+            updatesDir.listFiles()?.firstOrNull { it.extension.equals("apk", ignoreCase = true) }
         }
 
         if (candidate == null || !candidate.exists() || candidate.length() == 0L) {
             return null
         }
 
-        val archiveInfo = try {
-            context.packageManager.getPackageArchiveInfo(candidate.absolutePath, 0)
-        } catch (_: Exception) {
-            null
-        }
-
-        if (archiveInfo == null) {
-            Log.w(TAG, "Cached update APK ${candidate.name} is corrupt or unparseable. Deleting.")
+        val verification = verifyApkArchive(candidate, targetVersion)
+        if (verification.isFailure) {
+            Log.w(TAG, "Cached update APK ${candidate.name} failed verification: ${verification.exceptionOrNull()?.message}. Deleting.")
             candidate.delete()
             return null
-        }
-
-        if (cleanTarget != null) {
-            val archiveVersion = archiveInfo.versionName?.let { cleanVersionTag(it) }
-            if (archiveVersion != cleanTarget) {
-                Log.w(TAG, "Cached update APK version ($archiveVersion) does not match target ($cleanTarget). Deleting.")
-                candidate.delete()
-                return null
-            }
         }
 
         return candidate
@@ -210,18 +301,20 @@ class AppUpdateManager(private val context: Context) {
         onProgress: (percent: Int) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         try {
+            // Strictly enforce HTTPS
+            if (!downloadUrl.startsWith("https://", ignoreCase = true)) {
+                return@withContext Result.failure(
+                    SecurityException("Insecure download URL: updates must be served strictly over HTTPS")
+                )
+            }
+
+            // Always write to private app cache directory (never public Downloads)
             val updatesDir = File(context.cacheDir, "updates").apply {
                 mkdirs()
-                setReadable(true, false)
-                setExecutable(true, false)
             }
 
             // Clean up any stale APKs or partial downloads in updatesDir
-            updatesDir.listFiles()?.forEach { file ->
-                if (file.name.endsWith(".apk") || file.name.endsWith(".tmp")) {
-                    file.delete()
-                }
-            }
+            cleanupUpdatesDir(context)
 
             val cleanTarget = targetVersion?.let { cleanVersionTag(it) } ?: "update"
             val destinationFile = File(updatesDir, "SnapLoad-v$cleanTarget.apk")
@@ -235,6 +328,12 @@ class AppUpdateManager(private val context: Context) {
             val maxRedirects = 5
 
             while (true) {
+                if (!currentUrl.startsWith("https://", ignoreCase = true)) {
+                    return@withContext Result.failure(
+                        SecurityException("Insecure redirect URL: updates must be served strictly over HTTPS")
+                    )
+                }
+
                 val url = URL(currentUrl)
                 connection = (url.openConnection() as HttpURLConnection).apply {
                     instanceFollowRedirects = false
@@ -293,28 +392,18 @@ class AppUpdateManager(private val context: Context) {
 
             if (totalLength > 0L && downloadedBytes < totalLength) {
                 tempFile.delete()
-                return@withContext Result.failure(IllegalStateException("Download truncated: received $downloadedBytes of $totalLength bytes"))
+                return@withContext Result.failure(
+                    IllegalStateException("Download truncated: received $downloadedBytes of $totalLength bytes")
+                )
             }
 
-            // Verify integrity with Android PackageManager
-            val archiveInfo = try {
-                context.packageManager.getPackageArchiveInfo(tempFile.absolutePath, 0)
-            } catch (_: Exception) {
-                null
-            }
-
-            if (archiveInfo == null) {
-                Log.w(TAG, "Downloaded file could not be parsed as an Android APK. Aborting.")
-                // Note: on headless JVM test runners, getPackageArchiveInfo may return null without full framework
-                // If packageManager is a mock, it may still return null unless mocked.
-            }
-
-            if (archiveInfo != null && cleanTarget != "update") {
-                val archiveVersion = archiveInfo.versionName?.let { cleanVersionTag(it) }
-                if (archiveVersion != null && archiveVersion != cleanTarget) {
-                    tempFile.delete()
-                    return@withContext Result.failure(IllegalStateException("Downloaded APK version ($archiveVersion) did not match target release ($cleanTarget)"))
-                }
+            // Verify package integrity, package name, and versionCode before finalizing
+            val verification = verifyApkArchive(tempFile, targetVersion)
+            if (verification.isFailure) {
+                tempFile.delete()
+                return@withContext Result.failure(
+                    verification.exceptionOrNull() ?: IllegalStateException("Corrupt or invalid update archive")
+                )
             }
 
             if (!tempFile.renameTo(destinationFile)) {
@@ -326,7 +415,6 @@ class AppUpdateManager(private val context: Context) {
                 tempFile.delete()
             }
 
-            destinationFile.setReadable(true, false)
             onProgress(100)
             Result.success(destinationFile)
 
@@ -336,6 +424,9 @@ class AppUpdateManager(private val context: Context) {
         }
     }
 
+    /**
+     * Modern Android PackageInstaller session API replacing deprecated Intent.ACTION_VIEW dropper heuristics.
+     */
     fun promptInstallApk(apkFile: File): Result<Unit> {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -350,36 +441,58 @@ class AppUpdateManager(private val context: Context) {
                 }
             }
 
-            apkFile.setReadable(true, false)
-            apkFile.parentFile?.setReadable(true, false)
-            apkFile.parentFile?.setExecutable(true, false)
-
-            val authority = "${context.packageName}.fileprovider"
-            val contentUri = FileProvider.getUriForFile(context, authority, apkFile)
-
-            val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(contentUri, "application/vnd.android.package-archive")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            }
-
-            val resolvedActivities = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.packageManager.queryIntentActivities(
-                    installIntent,
-                    android.content.pm.PackageManager.ResolveInfoFlags.of(0)
+            // Verify integrity and versionCode before starting installer session
+            val verification = verifyApkArchive(apkFile)
+            if (verification.isFailure) {
+                return Result.failure(
+                    verification.exceptionOrNull() ?: IllegalStateException("Invalid APK for installation")
                 )
-            } else {
-                @Suppress("DEPRECATION")
-                context.packageManager.queryIntentActivities(installIntent, 0)
-            }
-            for (resolveInfo in resolvedActivities) {
-                val packageName = resolveInfo.activityInfo?.packageName ?: continue
-                context.grantUriPermission(packageName, contentUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
 
-            context.startActivity(installIntent)
+            val packageInstaller = context.packageManager.packageInstaller
+            val sessionParams = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+                setAppPackageName(context.packageName)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                    setInstallScenario(PackageManager.INSTALL_SCENARIO_FAST)
+                }
+            }
+
+            val sessionId = packageInstaller.createSession(sessionParams)
+            val session = packageInstaller.openSession(sessionId)
+
+            session.use { activeSession ->
+                activeSession.openWrite("snapload_update_${System.currentTimeMillis()}", 0, apkFile.length()).use { out ->
+                    apkFile.inputStream().use { input ->
+                        input.copyTo(out)
+                    }
+                    activeSession.fsync(out)
+                }
+
+                val statusIntent = Intent(context, InstallReceiver::class.java).apply {
+                    action = InstallReceiver.ACTION_INSTALL_STATUS
+                    putExtra(InstallReceiver.EXTRA_APK_PATH, apkFile.absolutePath)
+                }
+
+                val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                } else {
+                    PendingIntent.FLAG_UPDATE_CURRENT
+                }
+
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    sessionId,
+                    statusIntent,
+                    pendingIntentFlags
+                )
+
+                activeSession.commit(pendingIntent.intentSender)
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch installer intent: ${e.message}", e)
+            Log.e(TAG, "Failed to launch PackageInstaller session: ${e.message}", e)
             Result.failure(e)
         }
     }
