@@ -15,8 +15,8 @@ android {
         applicationId = "com.example.mediadownloader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 18
-        versionName = "3.0.10"
+        versionCode = 20
+        versionName = "3.1.1"
         ndk {
             abiFilters.clear()
             abiFilters.add("arm64-v8a")

@@ -71,6 +71,9 @@ Your links, files, and queries never leave your device. Downloaded media is imme
   - Select all, unselect all, or cherry-pick specific tracks to download sequentially.
 - 📲 **System Share Sheet Integration (`ACTION_SEND`)**:
   - Share links directly from YouTube, TikTok, Spotify, Instagram, Reddit, X (Twitter), Facebook, Twitch, and 1000+ supported sites into SnapLoad.
+- ⚡ **Quick Background Download on Share (v3.1.1+)**:
+  - In Settings, enable **"Quick download on share"** to download shared videos instantly in the background without ever leaving YouTube or switching to the SnapLoad UI!
+  - Disabled by default to maintain the interactive preview screen; easily activated with one toggle.
 - 🌐 **True Bi-Directional Localization**:
   - Full runtime language switching between **English (EN)** and **Polski (PL)** without restarting the app.
 - 🔄 **In-App Dual Auto-Update Engine**:
