@@ -4,13 +4,20 @@
     <string name="tagline_platforms">YouTube Shorts &amp; TikTok • 100% On-Device</string>
 
     <!-- Input Section -->
-    <string name="paste_link_label">Paste YouTube / TikTok link</string>
-    <string name="paste_link_placeholder">https://youtube.com/shorts/... or TikTok</string>
+    <string name="paste_link_label">Paste YouTube / Spotify / YT Music / TikTok link</string>
+    <string name="paste_link_placeholder">https://spotify.com/... or youtube.com/playlist...</string>
     <string name="paste_from_clipboard">Paste from clipboard</string>
     <string name="clear_input">Clear</string>
     <string name="platform_youtube">YouTube / Shorts</string>
+    <string name="platform_youtube_music">YouTube Music</string>
+    <string name="platform_spotify">Spotify</string>
     <string name="platform_tiktok">TikTok</string>
     <string name="platform_supported">Supported Link</string>
+    <string name="playlist_label">Playlist • %1$d tracks</string>
+    <string name="download_playlist_btn">DOWNLOAD PLAYLIST (%1$d TRACKS)</string>
+    <string name="playlist_downloading_progress">Downloading %1$d of %2$d • %3$s</string>
+    <string name="playlist_success_summary">Playlist completed! Saved %1$d of %2$d tracks to device.</string>
+    <string name="fallback_audio_only_to_mp3">No MP4 video stream available. Automatically downloaded as MP3!</string>
 
     <!-- Metadata Preview -->
     <string name="fetching_metadata">Fetching video details...</string>

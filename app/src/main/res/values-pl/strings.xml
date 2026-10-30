@@ -4,13 +4,20 @@
     <string name="tagline_platforms">YouTube Shorts i TikTok • 100% na urządzeniu</string>
 
     <!-- Sekcja wprowadzania linku -->
-    <string name="paste_link_label">Wklej link z YouTube / TikTok</string>
-    <string name="paste_link_placeholder">https://youtube.com/shorts/... lub TikTok</string>
+    <string name="paste_link_label">Wklej link z YouTube / Spotify / YT Music / TikTok</string>
+    <string name="paste_link_placeholder">https://spotify.com/... lub youtube.com/playlist...</string>
     <string name="paste_from_clipboard">Wklej ze schowka</string>
     <string name="clear_input">Wyczyść</string>
     <string name="platform_youtube">YouTube / Shorts</string>
+    <string name="platform_youtube_music">YouTube Music</string>
+    <string name="platform_spotify">Spotify</string>
     <string name="platform_tiktok">TikTok</string>
     <string name="platform_supported">Obsługiwany link</string>
+    <string name="playlist_label">Playlista • %1$d utworów</string>
+    <string name="download_playlist_btn">POBIERZ CAŁĄ PLAYLISTĘ (%1$d UTWORÓW)</string>
+    <string name="playlist_downloading_progress">Pobieranie %1$d z %2$d • %3$s</string>
+    <string name="playlist_success_summary">Playlista pobrana! Zapisano %1$d z %2$d utworów na urządzeniu.</string>
+    <string name="fallback_audio_only_to_mp3">Brak strumienia wideo MP4 (tylko audio). Pobrano automatycznie jako MP3!</string>
 
     <!-- Podgląd wideo -->
     <string name="fetching_metadata">Pobieranie informacji o wideo...</string>
