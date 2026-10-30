@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import android.util.Log
+import com.example.mediadownloader.data.FFmpegEngineManager
 import com.example.mediadownloader.data.YoutubeDLInitializer
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -32,6 +33,9 @@ class DownloaderApplication : Application() {
         CoroutineScope(Dispatchers.IO + SupervisorJob() + startupExceptionHandler).launch {
             try {
                 YoutubeDLInitializer.ensureInitialized(applicationContext)
+                if (!FFmpegEngineManager.isInstalled(applicationContext)) {
+                    FFmpegEngineManager.ensureFFmpegInstalled(applicationContext)
+                }
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to initialize engine in startup warmup: ${t.message}", t)
             }
@@ -51,7 +55,7 @@ class DownloaderApplication : Application() {
                 setShowBadge(false)
             }
             val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager?.createNotificationChannel(channel)
+            notificationManager.createNotificationChannel(channel)
         }
     }
 }

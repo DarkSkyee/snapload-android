@@ -68,28 +68,51 @@ object FFmpegEngineManager {
         if (!libDir.exists() || !libDir.isDirectory) return false
 
         // Check key media libraries exist, have genuine ELF binaries, and are not corrupt placeholders
-        val keyLibraries = listOf("libavcodec", "libavformat", "libavutil", "libswscale", "libswresample")
+        val keyLibraries = listOf(
+            "libavcodec",
+            "libavformat",
+            "libavutil",
+            "libswscale",
+            "libswresample",
+            "libavfilter",
+            "libavdevice",
+            "libpostproc"
+        )
         val files = libDir.listFiles() ?: return false
         for (key in keyLibraries) {
             val matching = files.filter { it.name.startsWith(key) }
             if (matching.isEmpty() || !matching.any { isValidElf(it) || it.length() > 50 * 1024L }) {
                 return false
             }
-            val headFile = File(libDir, "$key.so")
-            if (headFile.exists() && isCorruptPlaceholder(headFile)) {
-                return false
-            }
         }
 
-        // Check binDir contains valid ffmpeg and ffprobe aliases, or create them from nativeLibraryDir
+        // Must not contain any unresolved corrupt placeholders in usr/lib
+        val hasCorruptPlaceholder = try {
+            libDir.walkTopDown().filter { it.isFile }.any { isCorruptPlaceholder(it) }
+        } catch (_: Throwable) {
+            false
+        }
+        if (hasCorruptPlaceholder) {
+            return false
+        }
+
+        // Native executables in nativeLibraryDir are the primary execution target
+        val nativeDir = try { File(context.applicationInfo.nativeLibraryDir) } catch (_: Throwable) { null }
+        val nativeFfmpeg = if (nativeDir != null) File(nativeDir, "libffmpeg.so") else null
+        val nativeFfprobe = if (nativeDir != null) File(nativeDir, "libffprobe.so") else null
+        val hasNativeExecutables = nativeFfmpeg != null && nativeFfmpeg.exists() && nativeFfmpeg.length() > 0L &&
+                nativeFfprobe != null && nativeFfprobe.exists() && nativeFfprobe.length() > 0L
+
+        if (hasNativeExecutables) {
+            return true
+        }
+
+        // Fallback: Check binDir contains valid ffmpeg and ffprobe aliases, or create them from nativeLibraryDir
         val binDir = File(dir, "bin")
         val binFfmpeg = File(binDir, "ffmpeg")
         val binFfprobe = File(binDir, "ffprobe")
         if (!binFfmpeg.exists() || binFfmpeg.length() == 0L || !binFfprobe.exists() || binFfprobe.length() == 0L) {
-            val nativeDir = File(context.applicationInfo.nativeLibraryDir)
-            val nativeFfmpeg = File(nativeDir, "libffmpeg.so")
-            val nativeFfprobe = File(nativeDir, "libffprobe.so")
-            if (nativeFfmpeg.exists() && nativeFfprobe.exists()) {
+            if (nativeFfmpeg != null && nativeFfprobe != null && nativeFfmpeg.exists() && nativeFfprobe.exists()) {
                 try {
                     binDir.mkdirs()
                     setupBinaryAlias(nativeFfmpeg, binFfmpeg)
@@ -105,15 +128,20 @@ object FFmpegEngineManager {
     }
 
     fun getFFmpegLocation(context: Context): String {
+        val nativeDir = try {
+            File(context.applicationInfo.nativeLibraryDir)
+        } catch (_: Throwable) {
+            null
+        }
+        val nativeFfmpeg = if (nativeDir != null) File(nativeDir, "libffmpeg.so") else null
+        if (nativeFfmpeg != null && nativeFfmpeg.exists() && nativeFfmpeg.length() > 0L) {
+            return nativeFfmpeg.absolutePath
+        }
+
         val targetDir = getFFmpegDir(context)
         val binDir = File(targetDir, "bin")
         if (File(binDir, "ffmpeg").exists() && File(binDir, "ffprobe").exists()) {
             return binDir.absolutePath
-        }
-        val nativeDir = File(context.applicationInfo.nativeLibraryDir)
-        val libFfmpeg = File(nativeDir, "libffmpeg.so")
-        if (libFfmpeg.exists()) {
-            return libFfmpeg.absolutePath
         }
         return targetDir.absolutePath
     }
@@ -249,13 +277,14 @@ object FFmpegEngineManager {
                             }
                             if (relPath.length <= 200 && "^[a-zA-Z0-9_./-]+$".toRegex().matches(relPath)) {
                                 android.system.Os.symlink(relPath, file.absolutePath)
-                                linked = file.exists()
+                                linked = file.exists() && (isValidElf(file) || file.length() > 1024L)
                             }
                         } catch (t: Throwable) {
                             logW(TAG, "Symlink failed for ${file.name} -> ${realTarget.name}: ${t.message}")
                         }
                         if (!linked) {
                             try {
+                                file.delete()
                                 realTarget.copyTo(file, overwrite = true)
                             } catch (t: Throwable) {
                                 logE(TAG, "Copy fallback failed for ${file.name}: ${t.message}")
@@ -285,17 +314,17 @@ object FFmpegEngineManager {
         // Setup bin directory and binary aliases
         try {
             val binDir = File(targetDir, "bin").apply { mkdirs() }
-            val nativeDir = File(context.applicationInfo.nativeLibraryDir)
-            val nativeFfmpeg = File(nativeDir, "libffmpeg.so")
-            val nativeFfprobe = File(nativeDir, "libffprobe.so")
+            val nativeDir = try { File(context.applicationInfo.nativeLibraryDir) } catch (_: Throwable) { null }
+            val nativeFfmpeg = if (nativeDir != null) File(nativeDir, "libffmpeg.so") else null
+            val nativeFfprobe = if (nativeDir != null) File(nativeDir, "libffprobe.so") else null
 
-            if (nativeFfmpeg.exists()) {
+            if (nativeFfmpeg != null && nativeFfmpeg.exists()) {
                 setupBinaryAlias(nativeFfmpeg, File(binDir, "ffmpeg"))
                 setupBinaryAlias(nativeFfmpeg, File(targetDir, "ffmpeg"))
                 setupBinaryAlias(nativeFfmpeg, File(targetDir, "libffmpeg.so"))
             }
 
-            if (nativeFfprobe.exists()) {
+            if (nativeFfprobe != null && nativeFfprobe.exists()) {
                 setupBinaryAlias(nativeFfprobe, File(binDir, "ffprobe"))
                 setupBinaryAlias(nativeFfprobe, File(targetDir, "ffprobe"))
                 setupBinaryAlias(nativeFfprobe, File(targetDir, "libffprobe.so"))
@@ -365,7 +394,7 @@ object FFmpegEngineManager {
                             connectTimeout = 15000
                             readTimeout = 30000
                             instanceFollowRedirects = true
-                            setRequestProperty("User-Agent", "SnapLoad-Android/3.0.5")
+                            setRequestProperty("User-Agent", "SnapLoad-Android/3.0.6")
                         }
 
                         var responseCode = connection.responseCode
@@ -379,7 +408,7 @@ object FFmpegEngineManager {
                                 connectTimeout = 15000
                                 readTimeout = 30000
                                 instanceFollowRedirects = true
-                                setRequestProperty("User-Agent", "SnapLoad-Android/3.0.5")
+                                setRequestProperty("User-Agent", "SnapLoad-Android/3.0.6")
                             }
                             responseCode = connection.responseCode
                             redirects++
@@ -436,6 +465,7 @@ object FFmpegEngineManager {
     }
 
     private fun unzip(zipFile: File, destDir: File) {
+
         ZipInputStream(zipFile.inputStream().buffered()).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {

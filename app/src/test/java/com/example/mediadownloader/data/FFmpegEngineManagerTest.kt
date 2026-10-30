@@ -8,6 +8,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import android.content.Context
+import android.content.pm.ApplicationInfo
 import java.io.File
 
 class FFmpegEngineManagerTest {
@@ -240,5 +242,149 @@ class FFmpegEngineManagerTest {
         val repaired = FFmpegEngineManager.repairDirectory(rootDir)
         assertEquals(0, repaired)
         assertTrue(selfFile.exists())
+    }
+
+    @Test
+    fun getFFmpegLocation_prefersNativeLibraryDirWhenPresent() {
+        val nativeDir = tempFolder.newFolder("native_lib")
+        val fakeFfmpeg = File(nativeDir, "libffmpeg.so").apply {
+            writeBytes(elfHeader + ByteArray(100))
+        }
+        val appInfo = ApplicationInfo().apply {
+            nativeLibraryDir = nativeDir.absolutePath
+        }
+        val mockContext = object : android.content.ContextWrapper(null) {
+            override fun getApplicationInfo(): ApplicationInfo = appInfo
+            override fun getApplicationContext(): Context = this
+            override fun getNoBackupFilesDir(): File = tempFolder.root
+        }
+
+        val location = FFmpegEngineManager.getFFmpegLocation(mockContext)
+        assertEquals(fakeFfmpeg.absolutePath, location)
+    }
+
+    @Test
+    fun getFFmpegLocation_fallsBackWhenNativeLibraryDirMissing() {
+        val appInfo = ApplicationInfo().apply {
+            nativeLibraryDir = File(tempFolder.root, "non_existent_native").absolutePath
+        }
+        val mockContext = object : android.content.ContextWrapper(null) {
+            override fun getApplicationInfo(): ApplicationInfo = appInfo
+            override fun getApplicationContext(): Context = this
+            override fun getNoBackupFilesDir(): File = tempFolder.root
+        }
+
+        // Create packages/ffmpeg structure inside noBackupFilesDir
+        val ytBase = File(tempFolder.root, "youtubedl-android")
+        val packagesDir = File(ytBase, "packages")
+        val ffmpegDir = File(packagesDir, "ffmpeg").apply { mkdirs() }
+        val ffmpegBin = File(ffmpegDir, "bin").apply { mkdirs() }
+        File(ffmpegBin, "ffmpeg").apply { writeBytes(elfHeader + ByteArray(50)) }
+        File(ffmpegBin, "ffprobe").apply { writeBytes(elfHeader + ByteArray(50)) }
+
+        val location = FFmpegEngineManager.getFFmpegLocation(mockContext)
+        assertEquals(ffmpegBin.absolutePath, location)
+    }
+
+    @Test
+    fun isInstalled_returnsFalse_whenPackagesDirDoesNotExist() {
+        val nativeDir = tempFolder.newFolder("native_clean_install")
+        File(nativeDir, "libffmpeg.so").apply { writeBytes(elfHeader + ByteArray(100)) }
+        File(nativeDir, "libffprobe.so").apply { writeBytes(elfHeader + ByteArray(100)) }
+        val appInfo = ApplicationInfo().apply {
+            nativeLibraryDir = nativeDir.absolutePath
+        }
+        val mockContext = object : android.content.ContextWrapper(null) {
+            override fun getApplicationInfo(): ApplicationInfo = appInfo
+            override fun getApplicationContext(): Context = this
+            override fun getNoBackupFilesDir(): File = tempFolder.root
+        }
+
+        // Fresh install: native libffmpeg exists in APK, but packages/ffmpeg has not been downloaded yet
+        assertFalse(FFmpegEngineManager.isInstalled(mockContext))
+    }
+
+    @Test
+    fun isInstalled_returnsFalse_whenKeyLibrariesMissing() {
+        val nativeDir = tempFolder.newFolder("native_missing_keys")
+        File(nativeDir, "libffmpeg.so").apply { writeBytes(elfHeader + ByteArray(100)) }
+        File(nativeDir, "libffprobe.so").apply { writeBytes(elfHeader + ByteArray(100)) }
+        val appInfo = ApplicationInfo().apply {
+            nativeLibraryDir = nativeDir.absolutePath
+        }
+        val mockContext = object : android.content.ContextWrapper(null) {
+            override fun getApplicationInfo(): ApplicationInfo = appInfo
+            override fun getApplicationContext(): Context = this
+            override fun getNoBackupFilesDir(): File = tempFolder.root
+        }
+
+        val ytBase = File(tempFolder.root, "youtubedl-android")
+        val packagesDir = File(ytBase, "packages")
+        val ffmpegDir = File(packagesDir, "ffmpeg").apply { mkdirs() }
+        val libDir = File(ffmpegDir, "usr/lib").apply { mkdirs() }
+        // Only provide libavcodec, missing other required libraries
+        File(libDir, "libavcodec.so.61.1.0").apply { writeBytes(elfHeader + ByteArray(100000)) }
+
+        assertFalse(FFmpegEngineManager.isInstalled(mockContext))
+    }
+
+    @Test
+    fun isInstalled_returnsFalse_whenCorruptPlaceholderPresent() {
+        val nativeDir = tempFolder.newFolder("native_corrupt_placeholder")
+        File(nativeDir, "libffmpeg.so").apply { writeBytes(elfHeader + ByteArray(100)) }
+        File(nativeDir, "libffprobe.so").apply { writeBytes(elfHeader + ByteArray(100)) }
+        val appInfo = ApplicationInfo().apply {
+            nativeLibraryDir = nativeDir.absolutePath
+        }
+        val mockContext = object : android.content.ContextWrapper(null) {
+            override fun getApplicationInfo(): ApplicationInfo = appInfo
+            override fun getApplicationContext(): Context = this
+            override fun getNoBackupFilesDir(): File = tempFolder.root
+        }
+
+        val ytBase = File(tempFolder.root, "youtubedl-android")
+        val packagesDir = File(ytBase, "packages")
+        val ffmpegDir = File(packagesDir, "ffmpeg").apply { mkdirs() }
+        val libDir = File(ffmpegDir, "usr/lib").apply { mkdirs() }
+        val keys = listOf(
+            "libavcodec", "libavformat", "libavutil", "libswscale",
+            "libswresample", "libavfilter", "libavdevice", "libpostproc"
+        )
+        for (k in keys) {
+            File(libDir, "${k}.so.1.0").apply { writeBytes(elfHeader + ByteArray(100000)) }
+        }
+        // Add an unresolved corrupt placeholder for libavcodec.so.61
+        File(libDir, "libavcodec.so.61").apply { writeText("libavcodec.so.61.1.0\n") }
+
+        assertFalse(FFmpegEngineManager.isInstalled(mockContext))
+    }
+
+    @Test
+    fun isInstalled_returnsTrue_whenNativeExecutablesAndRepairedLibDirPresent() {
+        val nativeDir = tempFolder.newFolder("native_valid_install")
+        File(nativeDir, "libffmpeg.so").apply { writeBytes(elfHeader + ByteArray(100)) }
+        File(nativeDir, "libffprobe.so").apply { writeBytes(elfHeader + ByteArray(100)) }
+        val appInfo = ApplicationInfo().apply {
+            nativeLibraryDir = nativeDir.absolutePath
+        }
+        val mockContext = object : android.content.ContextWrapper(null) {
+            override fun getApplicationInfo(): ApplicationInfo = appInfo
+            override fun getApplicationContext(): Context = this
+            override fun getNoBackupFilesDir(): File = tempFolder.root
+        }
+
+        val ytBase = File(tempFolder.root, "youtubedl-android")
+        val packagesDir = File(ytBase, "packages")
+        val ffmpegDir = File(packagesDir, "ffmpeg").apply { mkdirs() }
+        val libDir = File(ffmpegDir, "usr/lib").apply { mkdirs() }
+        val keys = listOf(
+            "libavcodec", "libavformat", "libavutil", "libswscale",
+            "libswresample", "libavfilter", "libavdevice", "libpostproc"
+        )
+        for (k in keys) {
+            File(libDir, "${k}.so.1.0").apply { writeBytes(elfHeader + ByteArray(100000)) }
+        }
+
+        assertTrue(FFmpegEngineManager.isInstalled(mockContext))
     }
 }
