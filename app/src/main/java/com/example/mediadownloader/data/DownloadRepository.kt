@@ -294,8 +294,14 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
 
             if (needsFfmpeg && !FFmpegEngineManager.isInstalled(context)) {
                 onProgress(5f, 0L, "Preparing media converter...")
-                FFmpegEngineManager.ensureFFmpegInstalled(context) { pct ->
+                val installed = FFmpegEngineManager.ensureFFmpegInstalled(context) { pct ->
                     onProgress(pct.toFloat().coerceIn(0f, 90f), 0L, "Setting up converter ($pct%)...")
+                }
+                if (!installed) {
+                    Log.e(TAG, "FFmpeg installation failed before executing download")
+                    return@withContext Result.failure(
+                        IllegalStateException("FFmpeg media converter is not installed. Please check network connection and retry.")
+                    )
                 }
             }
 
@@ -354,8 +360,14 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                 // Ensure FFmpeg is installed before retrying with MP3 conversion
                 if (!FFmpegEngineManager.isInstalled(context)) {
                     onProgress(5f, 0L, "Preparing media converter...")
-                    FFmpegEngineManager.ensureFFmpegInstalled(context) { pct ->
+                    val retryInstalled = FFmpegEngineManager.ensureFFmpegInstalled(context) { pct ->
                         onProgress(pct.toFloat().coerceIn(0f, 90f), 0L, "Setting up converter ($pct%)...")
+                    }
+                    if (!retryInstalled) {
+                        Log.e(TAG, "FFmpeg installation failed before retrying MP3 fallback")
+                        return@withContext Result.failure(
+                            IllegalStateException("FFmpeg media converter is not installed. Please check network connection and retry.")
+                        )
                     }
                 }
 

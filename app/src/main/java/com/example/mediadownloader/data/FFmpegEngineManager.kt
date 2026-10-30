@@ -24,6 +24,35 @@ object FFmpegEngineManager {
 
     private val mutex = Mutex()
 
+    private fun logI(tag: String, message: String) {
+        try {
+            android.util.Log.i(tag, message)
+        } catch (_: Throwable) {
+            println("[$tag] $message")
+        }
+    }
+
+    private fun logW(tag: String, message: String) {
+        try {
+            android.util.Log.w(tag, message)
+        } catch (_: Throwable) {
+            println("[$tag] $message")
+        }
+    }
+
+    private fun logE(tag: String, message: String, throwable: Throwable? = null) {
+        try {
+            if (throwable != null) {
+                android.util.Log.e(tag, message, throwable)
+            } else {
+                android.util.Log.e(tag, message)
+            }
+        } catch (_: Throwable) {
+            System.err.println("[$tag] $message")
+            throwable?.printStackTrace()
+        }
+    }
+
     fun getFFmpegDir(context: Context): File {
         val base = File(context.applicationContext.noBackupFilesDir, "youtubedl-android")
         val packages = File(base, "packages")
@@ -35,15 +64,43 @@ object FFmpegEngineManager {
         if (!dir.exists() || !dir.isDirectory) return false
         val libDir = File(dir, "usr/lib")
         if (!libDir.exists() || !libDir.isDirectory) return false
+
+        // Check key media libraries exist and have genuine ELF binaries
+        val keyLibraries = listOf("libavcodec", "libavformat", "libavutil", "libswscale", "libswresample")
         val files = libDir.listFiles() ?: return false
-        val avcodecFiles = files.filter { it.name.startsWith("libavcodec") }
-        if (avcodecFiles.isEmpty()) return false
-        val hasRealLibrary = avcodecFiles.any { it.length() > 100 * 1024L }
-        if (!hasRealLibrary) return false
-        val avcodec61 = File(libDir, "libavcodec.so.61")
-        if (avcodec61.exists() && isCorruptPlaceholder(avcodec61)) {
+        for (key in keyLibraries) {
+            val matching = files.filter { it.name.startsWith(key) }
+            if (matching.isEmpty() || !matching.any { isValidElf(it) || it.length() > 50 * 1024L }) {
+                return false
+            }
+        }
+
+        // Must not contain unresolved corrupt placeholders
+        val corruptPlaceholders = libDir.walkTopDown().filter { it.isFile && isCorruptPlaceholder(it) }.count()
+        if (corruptPlaceholders > 0) {
             return false
         }
+
+        // Check binDir contains valid ffmpeg and ffprobe aliases, or create them from nativeLibraryDir
+        val binDir = File(dir, "bin")
+        val binFfmpeg = File(binDir, "ffmpeg")
+        val binFfprobe = File(binDir, "ffprobe")
+        if (!binFfmpeg.exists() || binFfmpeg.length() == 0L || !binFfprobe.exists() || binFfprobe.length() == 0L) {
+            val nativeDir = File(context.applicationInfo.nativeLibraryDir)
+            val nativeFfmpeg = File(nativeDir, "libffmpeg.so")
+            val nativeFfprobe = File(nativeDir, "libffprobe.so")
+            if (nativeFfmpeg.exists() && nativeFfprobe.exists()) {
+                try {
+                    binDir.mkdirs()
+                    setupBinaryAlias(nativeFfmpeg, binFfmpeg)
+                    setupBinaryAlias(nativeFfprobe, binFfprobe)
+                } catch (_: Throwable) {}
+            }
+            if (!binFfmpeg.exists() || binFfmpeg.length() == 0L || !binFfprobe.exists() || binFfprobe.length() == 0L) {
+                return false
+            }
+        }
+
         return true
     }
 
@@ -61,39 +118,110 @@ object FFmpegEngineManager {
         return targetDir.absolutePath
     }
 
-    fun repairSymlinksAndBinaries(context: Context) {
-        val targetDir = getFFmpegDir(context)
-        val libDir = File(targetDir, "usr/lib")
-        if (libDir.exists() && libDir.isDirectory) {
-            val files = libDir.listFiles() ?: emptyArray()
-            for (file in files) {
-                if (isCorruptPlaceholder(file)) {
-                    val targetName = try {
-                        file.readText().trim()
-                    } catch (_: Throwable) { "" }
+    fun isValidElf(file: File): Boolean {
+        if (!file.exists() || file.isDirectory || file.length() < 4) return false
+        return try {
+            file.inputStream().use { stream ->
+                val header = ByteArray(4)
+                val read = stream.read(header)
+                read == 4 &&
+                        header[0] == 0x7F.toByte() &&
+                        header[1] == 'E'.code.toByte() &&
+                        header[2] == 'L'.code.toByte() &&
+                        header[3] == 'F'.code.toByte()
+            }
+        } catch (_: Throwable) {
+            false
+        }
+    }
 
-                    if (targetName.isNotEmpty() && (targetName.endsWith(".so") || targetName.contains(".so."))) {
-                        val targetFile = File(libDir, targetName)
-                        if (targetFile.exists() && targetFile.length() > 1024L) {
-                            file.delete()
-                            var linked = false
-                            try {
-                                android.system.Os.symlink(targetName, file.absolutePath)
-                                linked = true
-                            } catch (t: Throwable) {
-                                Log.w(TAG, "Symlink failed for ${file.name} -> $targetName: ${t.message}")
-                            }
-                            if (!linked) {
-                                try {
-                                    targetFile.copyTo(file, overwrite = true)
-                                } catch (t: Throwable) {
-                                    Log.e(TAG, "Copy fallback failed for ${file.name}: ${t.message}")
-                                }
-                            }
+    fun isCorruptPlaceholder(file: File): Boolean {
+        if (!file.exists() || file.isDirectory) return false
+        if (isSymlink(file)) return false
+        if (file.length() in 1..1024L) {
+            return !isValidElf(file)
+        }
+        return false
+    }
+
+    fun resolveSymlinkTarget(file: File, baseDir: File, maxHops: Int = 10): File? {
+        var current = file
+        var hops = 0
+        val visited = mutableSetOf<String>()
+        visited.add(current.canonicalPath)
+
+        while (hops < maxHops) {
+            if (!isCorruptPlaceholder(current)) {
+                if (isValidElf(current) || (current.exists() && current.length() > 1024L)) {
+                    return current
+                }
+                return null
+            }
+
+            val targetName = try {
+                current.readText().trim()
+            } catch (_: Throwable) { "" }
+
+            if (targetName.isEmpty()) return null
+
+            val nextFile = File(current.parentFile ?: baseDir, targetName).canonicalFile
+            if (!nextFile.exists()) return null
+            if (!visited.add(nextFile.canonicalPath)) {
+                // Cycle detected in symlink chain
+                return null
+            }
+            current = nextFile
+            hops++
+        }
+        return null
+    }
+
+    fun repairDirectory(dir: File): Int {
+        if (!dir.exists() || !dir.isDirectory) return 0
+        var totalRepaired = 0
+        var modifiedInPass = true
+        var passes = 0
+
+        while (modifiedInPass && passes < 10) {
+            modifiedInPass = false
+            passes++
+
+            val files = dir.walkTopDown().filter { it.isFile && isCorruptPlaceholder(it) }.toList()
+            for (file in files) {
+                val realTarget = resolveSymlinkTarget(file, dir)
+                if (realTarget != null && (isValidElf(realTarget) || realTarget.length() > 1024L)) {
+                    file.delete()
+                    var linked = false
+                    try {
+                        val relPath = if (file.parentFile == realTarget.parentFile) {
+                            realTarget.name
+                        } else {
+                            realTarget.relativeTo(file.parentFile ?: dir).path.replace('\\', '/')
+                        }
+                        android.system.Os.symlink(relPath, file.absolutePath)
+                        linked = file.exists()
+                    } catch (t: Throwable) {
+                        logW(TAG, "Symlink failed for ${file.name} -> ${realTarget.name}: ${t.message}")
+                    }
+                    if (!linked) {
+                        try {
+                            realTarget.copyTo(file, overwrite = true)
+                        } catch (t: Throwable) {
+                            logE(TAG, "Copy fallback failed for ${file.name}: ${t.message}")
                         }
                     }
+                    totalRepaired++
+                    modifiedInPass = true
                 }
             }
+        }
+        return totalRepaired
+    }
+
+    fun repairSymlinksAndBinaries(context: Context) {
+        val targetDir = getFFmpegDir(context)
+        if (targetDir.exists() && targetDir.isDirectory) {
+            repairDirectory(targetDir)
         }
 
         // Setup bin directory and binary aliases
@@ -115,7 +243,7 @@ object FFmpegEngineManager {
                 setupBinaryAlias(nativeFfprobe, File(targetDir, "libffprobe.so"))
             }
         } catch (t: Throwable) {
-            Log.w(TAG, "Failed creating binary aliases: ${t.message}")
+            logW(TAG, "Failed creating binary aliases: ${t.message}")
         }
     }
 
@@ -124,31 +252,17 @@ object FFmpegEngineManager {
             val stat = android.system.Os.lstat(file.absolutePath)
             android.system.OsConstants.S_ISLNK(stat.st_mode)
         } catch (_: Throwable) {
-            false
-        }
-    }
-
-    private fun isCorruptPlaceholder(file: File): Boolean {
-        if (!file.exists() || file.isDirectory) return false
-        if (isSymlink(file)) return false
-        if (file.length() in 1..1024L) {
-            return try {
-                file.inputStream().use { stream ->
-                    val header = ByteArray(4)
-                    val read = stream.read(header)
-                    if (read < 4) true
-                    else header[0] != 0x7F.toByte() || header[1] != 'E'.code.toByte() || header[2] != 'L'.code.toByte() || header[3] != 'F'.code.toByte()
-                }
+            try {
+                java.nio.file.Files.isSymbolicLink(file.toPath())
             } catch (_: Throwable) {
-                true
+                false
             }
         }
-        return false
     }
 
     private fun setupBinaryAlias(source: File, destination: File) {
         if (destination.exists()) {
-            if (isCorruptPlaceholder(destination)) {
+            if (destination.length() == 0L || isCorruptPlaceholder(destination)) {
                 destination.delete()
             } else {
                 destination.setExecutable(true, false)
@@ -158,7 +272,7 @@ object FFmpegEngineManager {
         var created = false
         try {
             android.system.Os.symlink(source.absolutePath, destination.absolutePath)
-            created = true
+            created = destination.exists()
         } catch (_: Throwable) {}
         if (!created) {
             try {
@@ -186,7 +300,7 @@ object FFmpegEngineManager {
 
             for (ffmpegUrl in FFMPEG_RELEASE_URLS) {
                 try {
-                    Log.i(TAG, "Downloading FFmpeg native engine package from $ffmpegUrl")
+                    logI(TAG, "Downloading FFmpeg native engine package from $ffmpegUrl")
                     val url = URL(ffmpegUrl)
                     var connection = (url.openConnection() as HttpURLConnection).apply {
                         connectTimeout = 15000
@@ -196,18 +310,20 @@ object FFmpegEngineManager {
                     }
 
                     var responseCode = connection.responseCode
-                    if (responseCode in 300..399) {
+                    var redirects = 0
+                    while (responseCode in 300..399 && redirects < 5) {
                         val redirectUrl = connection.getHeaderField("Location")
-                        if (!redirectUrl.isNullOrBlank()) {
-                            connection.disconnect()
-                            connection = (URL(redirectUrl).openConnection() as HttpURLConnection).apply {
-                                connectTimeout = 15000
-                                readTimeout = 30000
-                                instanceFollowRedirects = true
-                                setRequestProperty("User-Agent", "SnapLoad-Android/3.0.3")
-                            }
-                            responseCode = connection.responseCode
+                        if (redirectUrl.isNullOrBlank()) break
+                        val currentUrl = connection.url
+                        connection.disconnect()
+                        connection = (URL(currentUrl, redirectUrl).openConnection() as HttpURLConnection).apply {
+                            connectTimeout = 15000
+                            readTimeout = 30000
+                            instanceFollowRedirects = true
+                            setRequestProperty("User-Agent", "SnapLoad-Android/3.0.3")
                         }
+                        responseCode = connection.responseCode
+                        redirects++
                     }
 
                     if (responseCode !in 200..299) {
@@ -237,17 +353,17 @@ object FFmpegEngineManager {
                         }
                     }
 
-                    Log.i(TAG, "Extracting FFmpeg to ${targetDir.absolutePath}...")
+                    logI(TAG, "Extracting FFmpeg to ${targetDir.absolutePath}...")
                     unzip(tempZip, targetDir)
                     tempZip.delete()
 
                     repairSymlinksAndBinaries(context)
 
                     val success = isInstalled(context)
-                    Log.i(TAG, "FFmpeg installed successfully: $success")
+                    logI(TAG, "FFmpeg installed successfully: $success")
                     if (success) return@withLock true
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed downloading FFmpeg from $ffmpegUrl: ${e.message}")
+                    logW(TAG, "Failed downloading FFmpeg from $ffmpegUrl: ${e.message}")
                     if (tempZip.exists()) tempZip.delete()
                 }
             }
@@ -263,7 +379,7 @@ object FFmpegEngineManager {
                 val newFile = File(destDir, entry.name)
                 val canonicalDestPath = destDir.canonicalPath
                 val canonicalEntryPath = newFile.canonicalPath
-                if (!canonicalEntryPath.startsWith(canonicalDestPath + File.separator)) {
+                if (canonicalEntryPath != canonicalDestPath && !canonicalEntryPath.startsWith(canonicalDestPath + File.separator)) {
                     throw SecurityException("Zip traversal attempt: ${entry.name}")
                 }
 

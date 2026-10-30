@@ -1,15 +1,17 @@
-# Proguard / R8 Configuration for SnapLoad
+# ProGuard rules for SnapLoad
 
-# Preserve yt-dlp native and python bridge classes
--keep class com.yausername.youtubedl_android.** { *; }
--dontwarn com.yausername.youtubedl_android.**
--keep class com.yausername.ffmpeg.** { *; }
--dontwarn com.yausername.ffmpeg.**
+# Preserve all app classes completely to guarantee zero startup/runtime reflection issues
+-keep class com.example.mediadownloader.** { *; }
+-keepclassmembers class com.example.mediadownloader.** { *; }
 
-# Keep models for serialization
--keep class com.example.mediadownloader.model.** { *; }
+# Preserve youtubedl-android core library and ffmpeg classes, JNI, and reflection bindings
+-keep class com.yausername.** { *; }
+-dontwarn com.yausername.**
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
 
-# Coil image loader
+# Coil Image Loader
 -keep class coil.** { *; }
 -dontwarn coil.**
 

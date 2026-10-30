@@ -21,6 +21,9 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -440,84 +443,90 @@ fun MainScreen(
     }
 
     // App Update Dialog
-    uiState.availableRelease?.let { release ->
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissUpdateDialog() },
-            title = {
-                Text(
-                    text = stringResource(R.string.update_dialog_title),
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column {
+    val release = uiState.availableRelease
+    if (release != null) {
+        CompositionLocalProvider(
+            LocalContext provides LocalContext.current,
+            LocalConfiguration provides LocalConfiguration.current
+        ) {
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissUpdateDialog() },
+                title = {
                     Text(
-                        text = stringResource(R.string.update_dialog_version, release.versionName),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
+                        text = stringResource(R.string.update_dialog_title),
+                        fontWeight = FontWeight.Bold
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(R.string.update_dialog_notes),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = release.releaseNotes,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 6,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    if (uiState.isDownloadingAppUpdate) {
-                        Spacer(modifier = Modifier.height(14.dp))
+                },
+                text = {
+                    Column {
                         Text(
-                            text = stringResource(R.string.update_downloading, uiState.appUpdateProgress),
-                            style = MaterialTheme.typography.labelSmall
+                            text = stringResource(R.string.update_dialog_version, release.versionName),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.update_dialog_notes),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        LinearProgressIndicator(
-                            progress = { uiState.appUpdateProgress / 100f },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp))
+                        Text(
+                            text = release.releaseNotes,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 6,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        if (uiState.isDownloadingAppUpdate) {
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Text(
+                                text = stringResource(R.string.update_downloading, uiState.appUpdateProgress),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            LinearProgressIndicator(
+                                progress = { uiState.appUpdateProgress / 100f },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    val hasApk = !release.apkDownloadUrl.isNullOrBlank()
+                    Button(
+                        onClick = {
+                            if (hasApk) {
+                                viewModel.downloadAndInstallUpdate(release)
+                            } else {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(release.htmlUrl))
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {}
+                            }
+                        },
+                        enabled = !uiState.isDownloadingAppUpdate
+                    ) {
+                        Text(
+                            stringResource(
+                                if (hasApk) R.string.update_dialog_button_install else R.string.update_dialog_button_view_github
+                            )
                         )
                     }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { viewModel.dismissUpdateDialog() },
+                        enabled = !uiState.isDownloadingAppUpdate
+                    ) {
+                        Text(stringResource(R.string.update_dialog_button_later))
+                    }
                 }
-            },
-            confirmButton = {
-                val hasApk = !release.apkDownloadUrl.isNullOrBlank()
-                Button(
-                    onClick = {
-                        if (hasApk) {
-                            viewModel.downloadAndInstallUpdate(release)
-                        } else {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(release.htmlUrl))
-                                context.startActivity(intent)
-                            } catch (_: Exception) {}
-                        }
-                    },
-                    enabled = !uiState.isDownloadingAppUpdate
-                ) {
-                    Text(
-                        stringResource(
-                            if (hasApk) R.string.update_dialog_button_install else R.string.update_dialog_button_view_github
-                        )
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { viewModel.dismissUpdateDialog() },
-                    enabled = !uiState.isDownloadingAppUpdate
-                ) {
-                    Text(stringResource(R.string.update_dialog_button_later))
-                }
-            }
-        )
+            )
+        }
     }
 }
 

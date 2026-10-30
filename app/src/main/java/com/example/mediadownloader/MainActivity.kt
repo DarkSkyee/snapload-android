@@ -49,6 +49,17 @@ class MainActivity : ComponentActivity() {
             // Notification permission handled
         }
 
+    override fun attachBaseContext(newBase: Context) {
+        val localizedBase = try {
+            val prefs = com.example.mediadownloader.data.AppPreferences(newBase)
+            val lang = prefs.selectedLanguage
+            LocaleHelper.createLocalizedContext(newBase, lang)
+        } catch (_: Exception) {
+            newBase
+        }
+        super.attachBaseContext(localizedBase)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -58,6 +69,11 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+            androidx.compose.runtime.LaunchedEffect(uiState.currentLanguage) {
+                LocaleHelper.applyLanguage(this@MainActivity, uiState.currentLanguage)
+            }
+
             val localizedConfiguration = remember(uiState.currentLanguage) {
                 LocaleHelper.getLocalizedConfiguration(resources.configuration, uiState.currentLanguage)
             }
@@ -119,12 +135,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private class LocalizedActivityContextWrapper(
-    val activity: ComponentActivity,
+class LocalizedActivityContextWrapper(
+    val base: Context,
     private val localizedConfiguration: Configuration
-) : ContextWrapper(activity) {
+) : ContextWrapper(base) {
     private val localizedResources: Resources by lazy {
-        activity.createConfigurationContext(localizedConfiguration).resources
+        base.createConfigurationContext(localizedConfiguration).resources
     }
 
     override fun getResources(): Resources = localizedResources

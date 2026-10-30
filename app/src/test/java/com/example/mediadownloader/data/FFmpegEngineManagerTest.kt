@@ -2,6 +2,8 @@ package com.example.mediadownloader.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -13,69 +15,148 @@ class FFmpegEngineManagerTest {
     @get:Rule
     val tempFolder = TemporaryFolder()
 
+    private val elfHeader = byteArrayOf(0x7F, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte())
+
     @Test
-    fun repairCorruptSymlinks_replacesTextPlaceholderWithTargetContent() {
-        val usrLib = tempFolder.newFolder("usr", "lib")
-
-        // Create a real target library > 1024 bytes starting with ELF magic
-        val realLib = File(usrLib, "libavcodec.so.61.19.101").apply {
-            writeBytes(byteArrayOf(0x7F, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte()) + ByteArray(2048) { 0x42 })
+    fun isValidElf_detectsElfHeaderAccurately() {
+        val elfFile = tempFolder.newFile("valid.so").apply {
+            writeBytes(elfHeader + ByteArray(100) { 1 })
         }
-        assertTrue(realLib.length() > 1024L)
-
-        // Create a corrupt 23-byte text file representing an unlinked symlink
-        val placeholder = File(usrLib, "libavcodec.so.61").apply {
+        val textFile = tempFolder.newFile("invalid.so").apply {
             writeText("libavcodec.so.61.19.101\n")
         }
-        assertEquals(24L, placeholder.length())
+        val emptyFile = tempFolder.newFile("empty.so")
 
-        // Simulate repair logic on usrLib
-        val files = usrLib.listFiles() ?: emptyArray()
-        for (file in files) {
-            if (file.length() in 1..1024L) {
-                val header = file.inputStream().use { it.readNBytes(4) }
-                val isElf = header.contentEquals(byteArrayOf(0x7F, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte()))
-                if (!isElf) {
-                    val targetName = file.readText().trim()
-                    val targetFile = File(usrLib, targetName)
-                    if (targetFile.exists() && targetFile.length() > 1024L) {
-                        file.delete()
-                        targetFile.copyTo(file, overwrite = true)
-                    }
-                }
-            }
-        }
-
-        // Verify the placeholder was repaired into a valid > 1024-byte ELF file
-        val repairedFile = File(usrLib, "libavcodec.so.61")
-        assertTrue(repairedFile.exists())
-        assertTrue(repairedFile.length() > 1024L)
-        val header = repairedFile.inputStream().use { it.readNBytes(4) }
-        assertTrue(header.contentEquals(byteArrayOf(0x7F, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte())))
+        assertTrue(FFmpegEngineManager.isValidElf(elfFile))
+        assertFalse(FFmpegEngineManager.isValidElf(textFile))
+        assertFalse(FFmpegEngineManager.isValidElf(emptyFile))
     }
 
     @Test
-    fun binaryAliases_createsExpectedBinaries() {
-        val ffmpegDir = tempFolder.newFolder("ffmpeg")
-        val binDir = File(ffmpegDir, "bin").apply { mkdirs() }
-        val nativeLibDir = tempFolder.newFolder("lib", "arm64-v8a")
-
-        val libFfmpeg = File(nativeLibDir, "libffmpeg.so").apply {
-            writeBytes(byteArrayOf(0x7F, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte()) + ByteArray(500) { 1 })
+    fun isCorruptPlaceholder_identifiesShortTextPlaceholders() {
+        val placeholder = tempFolder.newFile("placeholder.so").apply {
+            writeText("target.so.1\n")
         }
-        val libFfprobe = File(nativeLibDir, "libffprobe.so").apply {
-            writeBytes(byteArrayOf(0x7F, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte()) + ByteArray(500) { 2 })
+        val realElf = tempFolder.newFile("real.so").apply {
+            writeBytes(elfHeader + ByteArray(2048) { 2 })
         }
 
-        // Create copies in binDir
-        val binFfmpeg = File(binDir, "ffmpeg")
-        val binFfprobe = File(binDir, "ffprobe")
-        libFfmpeg.copyTo(binFfmpeg)
-        libFfprobe.copyTo(binFfprobe)
+        assertTrue(FFmpegEngineManager.isCorruptPlaceholder(placeholder))
+        assertFalse(FFmpegEngineManager.isCorruptPlaceholder(realElf))
+    }
 
-        assertTrue(binFfmpeg.exists())
-        assertTrue(binFfprobe.exists())
-        assertEquals(libFfmpeg.length(), binFfmpeg.length())
-        assertEquals(libFfprobe.length(), binFfprobe.length())
+    @Test
+    fun resolveSymlinkTarget_resolvesMultiHopChain() {
+        val dir = tempFolder.newFolder("multihop")
+
+        val realBinary = File(dir, "libglib-2.0.so.0.8600.0").apply {
+            writeBytes(elfHeader + ByteArray(4096) { 0x42 })
+        }
+        val hop1 = File(dir, "libglib-2.0.so.0").apply {
+            writeText("libglib-2.0.so.0.8600.0\n")
+        }
+        val hop0 = File(dir, "libglib-2.0.so").apply {
+            writeText("libglib-2.0.so.0\n")
+        }
+
+        val resolved = FFmpegEngineManager.resolveSymlinkTarget(hop0, dir)
+        assertNotNull(resolved)
+        assertEquals(realBinary.canonicalPath, resolved?.canonicalPath)
+
+        val resolvedHop1 = FFmpegEngineManager.resolveSymlinkTarget(hop1, dir)
+        assertNotNull(resolvedHop1)
+        assertEquals(realBinary.canonicalPath, resolvedHop1?.canonicalPath)
+    }
+
+    @Test
+    fun resolveSymlinkTarget_detectsCyclesWithoutHanging() {
+        val dir = tempFolder.newFolder("cycle")
+
+        val fileA = File(dir, "liba.so").apply { writeText("libb.so\n") }
+        val fileB = File(dir, "libb.so").apply { writeText("liba.so\n") }
+
+        val resolved = FFmpegEngineManager.resolveSymlinkTarget(fileA, dir)
+        assertNull(resolved)
+    }
+
+    @Test
+    fun repairDirectory_repairsAllPlaceholdersInMultiHopChain() {
+        val libDir = tempFolder.newFolder("usr", "lib")
+
+        // Create genuine ELF targets
+        val realGlib = File(libDir, "libglib-2.0.so.0.8600.0").apply {
+            writeBytes(elfHeader + ByteArray(5000) { 0x11 })
+        }
+        val realCodec = File(libDir, "libavcodec.so.61.19.101").apply {
+            writeBytes(elfHeader + ByteArray(8000) { 0x22 })
+        }
+
+        // Create single-hop placeholder
+        val codecSymlink = File(libDir, "libavcodec.so.61").apply {
+            writeText("libavcodec.so.61.19.101\n")
+        }
+
+        // Create multi-hop placeholders
+        val glibHop1 = File(libDir, "libglib-2.0.so.0").apply {
+            writeText("libglib-2.0.so.0.8600.0\n")
+        }
+        val glibHead = File(libDir, "libglib-2.0.so").apply {
+            writeText("libglib-2.0.so.0\n")
+        }
+
+        assertTrue(FFmpegEngineManager.isCorruptPlaceholder(codecSymlink))
+        assertTrue(FFmpegEngineManager.isCorruptPlaceholder(glibHop1))
+        assertTrue(FFmpegEngineManager.isCorruptPlaceholder(glibHead))
+
+        val repairedCount = FFmpegEngineManager.repairDirectory(libDir)
+        assertTrue("Expected at least 3 repaired placeholders, got $repairedCount", repairedCount >= 3)
+
+        // Verify that NO corrupt placeholders remain
+        assertFalse(FFmpegEngineManager.isCorruptPlaceholder(codecSymlink))
+        assertFalse(FFmpegEngineManager.isCorruptPlaceholder(glibHop1))
+        assertFalse(FFmpegEngineManager.isCorruptPlaceholder(glibHead))
+
+        // Verify all files have valid ELF contents
+        assertTrue(FFmpegEngineManager.isValidElf(codecSymlink))
+        assertTrue(FFmpegEngineManager.isValidElf(glibHop1))
+        assertTrue(FFmpegEngineManager.isValidElf(glibHead))
+    }
+
+    @Test
+    fun resolveSymlinkTarget_handlesDanglingPointerGracefully() {
+        val dir = tempFolder.newFolder("dangling")
+        val danglingPlaceholder = File(dir, "libdangling.so").apply {
+            writeText("non_existent_target.so\n")
+        }
+
+        val resolved = FFmpegEngineManager.resolveSymlinkTarget(danglingPlaceholder, dir)
+        assertNull(resolved)
+    }
+
+    @Test
+    fun isCorruptPlaceholder_handlesZeroByteFiles() {
+        val emptyFile = tempFolder.newFile("empty_zero_byte.so")
+        assertFalse(FFmpegEngineManager.isCorruptPlaceholder(emptyFile))
+        assertFalse(FFmpegEngineManager.isValidElf(emptyFile))
+    }
+
+    @Test
+    fun repairDirectory_handlesCrossDirectoryReferences() {
+        val rootDir = tempFolder.newFolder("cross_dir")
+        val binDir = File(rootDir, "bin").apply { mkdirs() }
+        val libDir = File(rootDir, "lib").apply { mkdirs() }
+
+        val realBinary = File(libDir, "libffmpeg.so.61.1.0").apply {
+            writeBytes(elfHeader + ByteArray(4000) { 0x55 })
+        }
+        val binPlaceholder = File(binDir, "ffmpeg").apply {
+            writeText("../lib/libffmpeg.so.61.1.0\n")
+        }
+
+        assertTrue(FFmpegEngineManager.isCorruptPlaceholder(binPlaceholder))
+        val repaired = FFmpegEngineManager.repairDirectory(rootDir)
+        assertTrue(repaired >= 1)
+        assertFalse(FFmpegEngineManager.isCorruptPlaceholder(binPlaceholder))
+        assertTrue(FFmpegEngineManager.isValidElf(binPlaceholder))
     }
 }

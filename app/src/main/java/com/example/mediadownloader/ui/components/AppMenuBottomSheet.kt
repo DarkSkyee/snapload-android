@@ -49,6 +49,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.mediadownloader.LocalizedActivityContextWrapper
 import com.example.mediadownloader.R
 import com.example.mediadownloader.util.LocaleHelper
 
@@ -75,7 +76,7 @@ fun AppMenuBottomSheet(
         LocaleHelper.getLocalizedConfiguration(baseContext.resources.configuration, currentLanguage)
     }
     val localizedContext = remember(currentLanguage, baseContext) {
-        LocaleHelper.createLocalizedContext(baseContext, currentLanguage)
+        LocalizedActivityContextWrapper(baseContext, localizedConfiguration)
     }
     val context = localizedContext
 

@@ -122,6 +122,17 @@ class DownloadService : Service() {
     private lateinit var repository: DownloadRepository
     private lateinit var notificationManager: NotificationManager
 
+    override fun attachBaseContext(newBase: Context) {
+        val localizedBase = try {
+            val prefs = com.example.mediadownloader.data.AppPreferences(newBase)
+            val lang = prefs.selectedLanguage
+            com.example.mediadownloader.util.LocaleHelper.createLocalizedContext(newBase, lang)
+        } catch (_: Exception) {
+            newBase
+        }
+        super.attachBaseContext(localizedBase)
+    }
+
     override fun onCreate() {
         super.onCreate()
         repository = DefaultDownloadRepository(applicationContext)
