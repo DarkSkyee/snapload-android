@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="160" height="160">
+  <defs>
+    <!-- Background Linear Gradient -->
+    <linearGradient id="bgGrad" x1="12" y1="8" x2="96" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#070913"/>
+      <stop offset="45%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E143B"/>
+    </linearGradient>
+
+    <!-- Ambient Radial Bloom -->
+    <radialGradient id="bloomGrad" cx="54" cy="52" r="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6366F1" stop-opacity="0.35"/>
+      <stop offset="55%" stop-color="#00F2FE" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 'S' Monogram Gradient -->
+    <linearGradient id="sGrad" x1="34" y1="28" x2="74" y2="80" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00F2FE"/>
+      <stop offset="50%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#A855F7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded squircle / card -->
+  <rect x="0" y="0" width="108" height="108" rx="24" fill="url(#bgGrad)"/>
+
+  <!-- Radial bloom -->
+  <circle cx="54" cy="54" r="44" fill="url(#bloomGrad)"/>
+
+  <!-- Speed Arc Accents -->
+  <circle cx="54" cy="54" r="40" stroke="#00F2FE" stroke-opacity="0.18" stroke-width="0.8" fill="none"/>
+  <circle cx="54" cy="54" r="47" stroke="#818CF8" stroke-opacity="0.12" stroke-width="0.5" fill="none"/>
+  <circle cx="54" cy="54" r="34" stroke="#00F2FE" stroke-opacity="0.15" stroke-width="1.5" fill="none"/>
+
+  <!-- Equalizer Fins -->
+  <path d="M24,47 C22,51 22,57 24,61" stroke="#00F2FE" stroke-opacity="0.35" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+  <path d="M29,43 C26.5,49 26.5,59 29,65" stroke="#6366F1" stroke-opacity="0.55" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+  <path d="M79,43 C81.5,49 81.5,59 79,65" stroke="#6366F1" stroke-opacity="0.55" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+  <path d="M84,47 C86,51 86,57 84,61" stroke="#00F2FE" stroke-opacity="0.35" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+
+  <!-- Primary 'S' Monogram -->
+  <path d="M66,32 C58,28 44,29 38,36 C34,41 35,49 42,53 L58,60 C64,63 66,67 64,72 C61,77 53,79 46,77 C41,75 37,71 36,67"
+        stroke="url(#sGrad)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- Central Download Arrow -->
+  <path d="M54,42 L54,64 M45,55 L54,64 L63,55" stroke="#FFFFFF" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- Speed Media Base Anchor -->
+  <path d="M43,73 C47,75.5 61,75.5 65,73" stroke="#00F2FE" stroke-width="3" stroke-linecap="round" fill="none"/>
+</svg>

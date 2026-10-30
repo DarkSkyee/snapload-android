@@ -1,12 +1,20 @@
 # SnapLoad 🎬📥
 ### Modern, Lightning-Fast Video & Audio Downloader for Android (100% On-Device)
 
-[![Release](https://img.shields.io/github/v/release/DarkSkyee/snapload-android?style=for-the-badge&color=6366F1&label=Release)](https://github.com/DarkSkyee/snapload-android/releases)
-[![Android](https://img.shields.io/badge/Android-10%2B%20%28API%2029%2B%29-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
+[![Release](https://img.shields.io/github/v/release/DarkSkyee/snapload-android?style=for-the-badge&color=6366F1&label=Release&logo=github)](https://github.com/DarkSkyee/snapload-android/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/DarkSkyee/snapload-android/total?style=for-the-badge&color=10B981&label=Downloads&logo=github)](https://github.com/DarkSkyee/snapload-android/releases)
+[![Stars](https://img.shields.io/github/stars/DarkSkyee/snapload-android?style=for-the-badge&color=F59E0B&label=Stars&logo=github)](https://github.com/DarkSkyee/snapload-android/stargazers)
+[![Android](https://img.shields.io/badge/Android-7.0%2B%20%28API%2024%2B%29-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![yt-dlp](https://img.shields.io/badge/Core-yt--dlp%20Engine-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://github.com/yt-dlp/yt-dlp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
+
+<br/>
+
+<p align="center">
+  <img src="docs/assets/logo.svg" width="160" height="160" alt="SnapLoad Logo" />
+</p>
 
 ---
 
@@ -80,11 +88,11 @@ cd snapload-android
 # Run Unit Tests
 .\gradlew testDebugUnitTest
 
-# Assemble Debug APK
-.\gradlew assembleDebug
+# Assemble Release APK
+.\gradlew assembleRelease
 
 # Output APK is located at:
-# app/build/outputs/apk/debug/app-debug.apk
+# app/build/outputs/apk/release/app-release.apk
 ```
 
 ---
