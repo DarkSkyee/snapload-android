@@ -41,6 +41,9 @@ object LinkParser {
     fun detectPlatform(url: String?): Platform {
         if (url.isNullOrBlank()) return Platform.UNKNOWN
         val cleanUrl = extractUrl(url) ?: url.trim()
+        if (cleanUrl.startsWith("spotify:", ignoreCase = true)) {
+            return Platform.SPOTIFY
+        }
         val uri = try {
             URI(cleanUrl)
         } catch (_: Exception) {
