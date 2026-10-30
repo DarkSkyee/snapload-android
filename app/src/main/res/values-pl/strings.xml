@@ -96,6 +96,14 @@
     <string name="settings_auto_engine_desc">Utrzymuje rdzeń yt-dlp w najnowszej wersji, zapobiegając błędom serwisów</string>
     <string name="settings_auto_app">Sprawdzaj aktualizacje aplikacji</string>
     <string name="settings_auto_app_desc">Powiadamia o pojawieniu się nowej wersji APK SnapLoad na GitHubie</string>
+    <string name="settings_quick_share_title">Pobieranie po udostępnieniu</string>
+    <string name="settings_quick_share_download">Pobieraj od razu po udostępnieniu</string>
+    <string name="settings_quick_share_download_desc">Od razu pobiera w tle po udostępnieniu np. z YouTube bez przechodzenia do aplikacji</string>
+    <string name="quick_download_started">SnapLoad: Rozpoczynanie pobierania w tle…</string>
+    <string name="quick_download_queued">SnapLoad: Dodano do kolejki pobierania w tle…</string>
+    <string name="quick_download_failed_to_start">SnapLoad: Nie udało się uruchomić pobierania w tle</string>
+    <string name="quick_download_no_link">SnapLoad: Nie znaleziono prawidłowego linku do pobrania</string>
+    <string name="quick_download_default_title">SnapLoad Pobieranie</string>
     <string name="settings_check_app_now">Sprawdź aktualizacje aplikacji</string>
     <string name="settings_update_engine_now">Aktualizuj silnik yt-dlp teraz</string>
     <string name="settings_engine_updating">Aktualizowanie rdzenia yt-dlp...</string>

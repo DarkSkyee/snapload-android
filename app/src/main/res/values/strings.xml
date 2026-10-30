@@ -96,6 +96,14 @@
     <string name="settings_auto_engine_desc">Automatically updates yt-dlp engine to prevent download errors</string>
     <string name="settings_auto_app">Auto-check app releases</string>
     <string name="settings_auto_app_desc">Notifies you when a new SnapLoad APK is available on GitHub</string>
+    <string name="settings_quick_share_title">Background Download on Share</string>
+    <string name="settings_quick_share_download">Quick download on share</string>
+    <string name="settings_quick_share_download_desc">Instantly download when sharing a link from YouTube or other apps without opening SnapLoad</string>
+    <string name="quick_download_started">SnapLoad: Starting background download…</string>
+    <string name="quick_download_queued">SnapLoad: Added to background download queue…</string>
+    <string name="quick_download_failed_to_start">SnapLoad: Could not start background download</string>
+    <string name="quick_download_no_link">SnapLoad: No valid link found to download</string>
+    <string name="quick_download_default_title">SnapLoad Download</string>
     <string name="settings_check_app_now">Check for App Updates</string>
     <string name="settings_update_engine_now">Update yt-dlp Engine Now</string>
     <string name="settings_engine_updating">Updating yt-dlp core...</string>

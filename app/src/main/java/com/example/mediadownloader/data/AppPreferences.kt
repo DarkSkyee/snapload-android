@@ -20,6 +20,9 @@ class AppPreferences(context: Context) {
     private val _autoUpdateAppFlow = MutableStateFlow(getAutoUpdateAppInternal())
     val autoUpdateAppFlow: StateFlow<Boolean> = _autoUpdateAppFlow.asStateFlow()
 
+    private val _quickDownloadOnShareFlow = MutableStateFlow(getQuickDownloadOnShareInternal())
+    val quickDownloadOnShareFlow: StateFlow<Boolean> = _quickDownloadOnShareFlow.asStateFlow()
+
     var selectedLanguage: String
         get() = getLanguageInternal()
         set(value) {
@@ -39,6 +42,13 @@ class AppPreferences(context: Context) {
         set(value) {
             prefs.edit().putBoolean(KEY_AUTO_UPDATE_APP, value).apply()
             _autoUpdateAppFlow.value = value
+        }
+
+    var quickDownloadOnShare: Boolean
+        get() = getQuickDownloadOnShareInternal()
+        set(value) {
+            prefs.edit().putBoolean(KEY_QUICK_DOWNLOAD_ON_SHARE, value).apply()
+            _quickDownloadOnShareFlow.value = value
         }
 
     var lastEngineUpdateCheck: Long
@@ -65,11 +75,16 @@ class AppPreferences(context: Context) {
         return prefs.getBoolean(KEY_AUTO_UPDATE_APP, true)
     }
 
+    private fun getQuickDownloadOnShareInternal(): Boolean {
+        return prefs.getBoolean(KEY_QUICK_DOWNLOAD_ON_SHARE, false)
+    }
+
     companion object {
         private const val PREFS_NAME = "snapload_preferences"
         private const val KEY_LANGUAGE = "key_language"
         private const val KEY_AUTO_UPDATE_ENGINE = "key_auto_update_engine"
         private const val KEY_AUTO_UPDATE_APP = "key_auto_update_app"
+        private const val KEY_QUICK_DOWNLOAD_ON_SHARE = "key_quick_download_on_share"
         private const val KEY_LAST_ENGINE_CHECK = "key_last_engine_check"
         private const val KEY_LAST_APP_CHECK = "key_last_app_check"
     }

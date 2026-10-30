@@ -6,6 +6,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -36,6 +37,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.coroutines.coroutineContext
 import java.util.UUID
 
 class DownloadService : Service() {
@@ -62,11 +64,11 @@ class DownloadService : Service() {
         private val _downloadState = MutableStateFlow<DownloadUiState>(DownloadUiState.Idle)
         val downloadState: StateFlow<DownloadUiState> = _downloadState.asStateFlow()
 
-        fun startDownload(context: Context, url: String, format: DownloadFormat, title: String) {
-            startDownload(context, url, DownloadConfiguration.fromDownloadFormat(format), title)
+        fun startDownload(context: Context, url: String, format: DownloadFormat, title: String): Boolean {
+            return startDownload(context, url, DownloadConfiguration.fromDownloadFormat(format), title)
         }
 
-        fun startDownload(context: Context, url: String, config: DownloadConfiguration, title: String) {
+        fun startDownload(context: Context, url: String, config: DownloadConfiguration, title: String): Boolean {
             val intent = Intent(context, DownloadService::class.java).apply {
                 action = ACTION_START_DOWNLOAD
                 putExtra(EXTRA_URL, url)
@@ -78,10 +80,10 @@ class DownloadService : Service() {
                 putExtra(EXTRA_AUDIO_FORMAT, config.audioFormat.name)
                 putExtra(EXTRA_AUDIO_QUALITY, config.audioQuality.name)
             }
-            startServiceCompat(context, intent)
+            return startServiceCompat(context, intent)
         }
 
-        fun startPlaylistDownload(context: Context, playlist: PlaylistMetadata, config: DownloadConfiguration) {
+        fun startPlaylistDownload(context: Context, playlist: PlaylistMetadata, config: DownloadConfiguration): Boolean {
             pendingPlaylistToDownload = playlist
             val intent = Intent(context, DownloadService::class.java).apply {
                 action = ACTION_START_PLAYLIST_DOWNLOAD
@@ -93,15 +95,29 @@ class DownloadService : Service() {
                 putExtra(EXTRA_AUDIO_FORMAT, config.audioFormat.name)
                 putExtra(EXTRA_AUDIO_QUALITY, config.audioQuality.name)
             }
-            startServiceCompat(context, intent)
+            return startServiceCompat(context, intent)
         }
 
-        private fun startServiceCompat(context: Context, intent: Intent) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+        private fun startServiceCompat(context: Context, intent: Intent): Boolean {
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start DownloadService: ${e.message}", e)
+                false
             }
+        }
+
+        fun isDownloadingActive(): Boolean {
+            val state = _downloadState.value
+            return state is DownloadUiState.Downloading ||
+                    state is DownloadUiState.PlaylistDownloading ||
+                    state is DownloadUiState.Processing ||
+                    state is DownloadUiState.SavingToGallery
         }
 
         fun cancelDownload(context: Context) {
@@ -116,9 +132,17 @@ class DownloadService : Service() {
         }
     }
 
+    private sealed class DownloadTask {
+        data class Single(val url: String, val config: DownloadConfiguration, val title: String) : DownloadTask()
+        data class Playlist(val playlist: PlaylistMetadata, val config: DownloadConfiguration) : DownloadTask()
+    }
+
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
-    private var downloadJob: Job? = null
+    private val taskQueue = java.util.concurrent.ConcurrentLinkedQueue<DownloadTask>()
+    private val queueLock = Any()
+    private var workerJob: Job? = null
     private var currentDownloadId: String? = null
+    private var completionNotificationId = 2000
     private lateinit var repository: DownloadRepository
     private lateinit var notificationManager: NotificationManager
 
@@ -143,19 +167,22 @@ class DownloadService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val config = extractConfigFromIntent(intent)
-        val title = intent?.getStringExtra(EXTRA_TITLE) ?: "SnapLoad Download"
+        val title = intent?.getStringExtra(EXTRA_TITLE) ?: getString(R.string.quick_download_default_title)
 
         when (intent?.action) {
             ACTION_START_DOWNLOAD -> {
                 val url = intent.getStringExtra(EXTRA_URL) ?: return START_NOT_STICKY
-                handleStartSingleDownload(url, config, title)
+                enqueueTask(DownloadTask.Single(url, config, title))
             }
             ACTION_START_PLAYLIST_DOWNLOAD -> {
                 val playlist = pendingPlaylistToDownload
+                pendingPlaylistToDownload = null
                 if (playlist != null && playlist.items.isNotEmpty()) {
-                    handleStartPlaylistDownload(playlist, config)
+                    enqueueTask(DownloadTask.Playlist(playlist, config))
                 } else {
-                    stopSelf()
+                    if (taskQueue.isEmpty() && workerJob?.isActive != true) {
+                        stopSelf()
+                    }
                 }
             }
             ACTION_CANCEL_DOWNLOAD -> {
@@ -186,86 +213,138 @@ class DownloadService : Service() {
         )
     }
 
-    private fun handleStartSingleDownload(url: String, config: DownloadConfiguration, initialTitle: String) {
-        val downloadId = "dl_" + UUID.randomUUID().toString().substring(0, 8)
-        currentDownloadId = downloadId
-
-        val notification = createNotification(
-            title = initialTitle,
-            contentText = getString(R.string.notification_starting),
-            progress = 0,
-            isIndeterminate = true
-        )
-        startServiceForeground(notification)
-
-        _downloadState.value = DownloadUiState.Downloading(0f, "Initializing...", 0)
-
-        downloadJob = serviceScope.launch(Dispatchers.IO) {
-            try {
-                val downloadResult = repository.downloadMediaDetailed(
-                    url = url,
-                    config = config,
-                    downloadId = downloadId
-                ) { progress, eta, statusText ->
-                    _downloadState.value = DownloadUiState.Downloading(progress, statusText, eta)
-                    updateNotificationProgress(initialTitle, statusText, progress.toInt())
+    private fun enqueueTask(task: DownloadTask) {
+        synchronized(queueLock) {
+            taskQueue.add(task)
+            if (workerJob == null || workerJob?.isActive != true) {
+                val initialTitle = when (task) {
+                    is DownloadTask.Single -> if (task.title.isNotBlank()) task.title else getString(R.string.quick_download_default_title)
+                    is DownloadTask.Playlist -> task.playlist.title
                 }
-
-                if (downloadResult.isFailure) {
-                    val error = downloadResult.exceptionOrNull()?.message ?: "Download failed"
-                    _downloadState.value = DownloadUiState.Error(error)
-                    return@launch
-                }
-
-                val detailedResult = downloadResult.getOrThrow()
-                val tempFile = detailedResult.file
-                val effectiveConfig = detailedResult.effectiveConfig
-
-                _downloadState.value = DownloadUiState.SavingToGallery
-                updateNotificationIndeterminate(initialTitle, getString(R.string.notification_saving))
-
-                val savedUri = MediaStoreSaver.saveToGallery(
-                    context = applicationContext,
-                    tempFile = tempFile,
+                val notification = createNotification(
                     title = initialTitle,
-                    config = effectiveConfig
+                    contentText = getString(R.string.notification_starting),
+                    progress = 0,
+                    isIndeterminate = true
                 )
-
-                if (savedUri != null) {
-                    _downloadState.value = DownloadUiState.Success(
-                        title = initialTitle,
-                        uri = savedUri,
-                        format = effectiveConfig.asDownloadFormat,
-                        config = effectiveConfig,
-                        fallbackNotice = detailedResult.fallbackNotice
-                    )
-                } else {
-                    val errorMsg = getString(R.string.notification_failed)
-                    _downloadState.value = DownloadUiState.Error(errorMsg)
+                startServiceForeground(notification)
+                workerJob = serviceScope.launch(Dispatchers.IO) {
+                    runQueueWorker()
                 }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Download service crashed: ${e.message}", e)
-                val errorMsg = e.message ?: "Unexpected error occurred"
-                _downloadState.value = DownloadUiState.Error(errorMsg)
-            } finally {
-                dismissDownloadNotification()
-                stopSelf()
             }
         }
     }
 
-    private fun handleStartPlaylistDownload(playlist: PlaylistMetadata, config: DownloadConfiguration) {
+    private suspend fun runQueueWorker() {
+        try {
+            while (coroutineContext.isActive) {
+                val nextTask = synchronized(queueLock) {
+                    taskQueue.poll()
+                } ?: break
+
+                when (nextTask) {
+                    is DownloadTask.Single -> {
+                        executeSingleDownload(nextTask.url, nextTask.config, nextTask.title)
+                    }
+                    is DownloadTask.Playlist -> {
+                        executePlaylistDownload(nextTask.playlist, nextTask.config)
+                    }
+                }
+            }
+        } finally {
+            synchronized(queueLock) {
+                workerJob = null
+            }
+            dismissDownloadNotification()
+            stopSelf()
+        }
+    }
+
+    private suspend fun executeSingleDownload(url: String, config: DownloadConfiguration, initialTitle: String) {
+        val downloadId = "dl_" + UUID.randomUUID().toString().substring(0, 8)
+        currentDownloadId = downloadId
+
+        var displayTitle = if (initialTitle.isNotBlank()) initialTitle else getString(R.string.quick_download_default_title)
+        updateNotificationIndeterminate(displayTitle, getString(R.string.notification_starting))
+        _downloadState.value = DownloadUiState.Downloading(0f, "Initializing...", 0)
+
+        try {
+            val isGenericTitle = initialTitle.isBlank() ||
+                    initialTitle == "SnapLoad Download" ||
+                    initialTitle == "SnapLoad Pobieranie" ||
+                    initialTitle.startsWith("SnapLoad_")
+
+            if (isGenericTitle) {
+                val meta = runCatching { repository.fetchMetadata(url).getOrNull() }.getOrNull()
+                // If the link points to a playlist, redirect seamlessly to playlist download!
+                if (meta?.isPlaylist == true && meta.playlistInfo != null && meta.playlistInfo.items.isNotEmpty()) {
+                    executePlaylistDownload(meta.playlistInfo, config)
+                    return
+                }
+                val fetchedTitle = meta?.title?.trim()
+                if (!fetchedTitle.isNullOrBlank()) {
+                    displayTitle = fetchedTitle
+                    updateNotificationIndeterminate(displayTitle, getString(R.string.notification_starting))
+                }
+            }
+
+            val downloadResult = repository.downloadMediaDetailed(
+                url = url,
+                config = config,
+                downloadId = downloadId
+            ) { progress, eta, statusText ->
+                _downloadState.value = DownloadUiState.Downloading(progress, statusText, eta)
+                updateNotificationProgress(displayTitle, statusText, progress.toInt())
+            }
+
+            if (downloadResult.isFailure) {
+                val error = downloadResult.exceptionOrNull()?.message ?: "Download failed"
+                _downloadState.value = DownloadUiState.Error(error)
+                showErrorNotification(displayTitle, error)
+                return
+            }
+
+            val detailedResult = downloadResult.getOrThrow()
+            val tempFile = detailedResult.file
+            val effectiveConfig = detailedResult.effectiveConfig
+
+            _downloadState.value = DownloadUiState.SavingToGallery
+            updateNotificationIndeterminate(displayTitle, getString(R.string.notification_saving))
+
+            val savedUri = MediaStoreSaver.saveToGallery(
+                context = applicationContext,
+                tempFile = tempFile,
+                title = displayTitle,
+                config = effectiveConfig
+            )
+
+            if (savedUri != null) {
+                _downloadState.value = DownloadUiState.Success(
+                    title = displayTitle,
+                    uri = savedUri,
+                    format = effectiveConfig.asDownloadFormat,
+                    config = effectiveConfig,
+                    fallbackNotice = detailedResult.fallbackNotice
+                )
+                showCompletionNotification(displayTitle, savedUri, effectiveConfig)
+            } else {
+                val errorMsg = getString(R.string.notification_failed)
+                _downloadState.value = DownloadUiState.Error(errorMsg)
+                showErrorNotification(displayTitle, errorMsg)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Download service error: ${e.message}", e)
+            val errorMsg = e.message ?: "Unexpected error occurred"
+            _downloadState.value = DownloadUiState.Error(errorMsg)
+            showErrorNotification(displayTitle, errorMsg)
+        }
+    }
+
+    private suspend fun executePlaylistDownload(playlist: PlaylistMetadata, config: DownloadConfiguration) {
         val totalCount = playlist.items.size
         val currentItems = playlist.items.toMutableList()
 
-        val notification = createNotification(
-            title = playlist.title,
-            contentText = getString(R.string.notification_starting),
-            progress = 0,
-            isIndeterminate = false
-        )
-        startServiceForeground(notification)
+        updateNotificationProgress(playlist.title, getString(R.string.notification_starting), 0)
 
         _downloadState.value = DownloadUiState.PlaylistDownloading(
             playlistTitle = playlist.title,
@@ -277,109 +356,103 @@ class DownloadService : Service() {
             items = currentItems
         )
 
-        downloadJob = serviceScope.launch(Dispatchers.IO) {
-            var successCount = 0
-            var failedCount = 0
-            var fallbackOccurredNotice: String? = null
+        var successCount = 0
+        var failedCount = 0
+        var fallbackOccurredNotice: String? = null
 
-            try {
-                for (i in currentItems.indices) {
-                    if (!isActive) break
+        try {
+            for (i in currentItems.indices) {
+                if (!coroutineContext.isActive) break
 
-                    val item = currentItems[i]
-                    val downloadId = "pl_" + UUID.randomUUID().toString().substring(0, 8)
-                    currentDownloadId = downloadId
+                val item = currentItems[i]
+                val downloadId = "pl_" + UUID.randomUUID().toString().substring(0, 8)
+                currentDownloadId = downloadId
 
-                    currentItems[i] = item.copy(status = PlaylistItemStatus.DOWNLOADING, progress = 0f)
-                    val overallProgress = (i.toFloat() / totalCount.toFloat()) * 100f
+                currentItems[i] = item.copy(status = PlaylistItemStatus.DOWNLOADING, progress = 0f)
+                val overallProgress = (i.toFloat() / totalCount.toFloat()) * 100f
 
+                _downloadState.value = DownloadUiState.PlaylistDownloading(
+                    playlistTitle = playlist.title,
+                    currentIndex = i + 1,
+                    totalCount = totalCount,
+                    currentItemTitle = item.title,
+                    currentItemProgress = 0f,
+                    overallProgress = overallProgress,
+                    items = currentItems.toList()
+                )
+
+                val statusMsg = getString(R.string.playlist_downloading_progress, i + 1, totalCount, item.title)
+                updateNotificationProgress(playlist.title, statusMsg, overallProgress.toInt())
+
+                val downloadResult = repository.downloadMediaDetailed(
+                    url = item.sourceUrl,
+                    config = config,
+                    downloadId = downloadId
+                ) { itemProg, _, statusText ->
+                    val currentOverall = (((i.toFloat() + (itemProg / 100f)) / totalCount.toFloat()) * 100f).coerceIn(0f, 100f)
+                    currentItems[i] = currentItems[i].copy(progress = itemProg)
                     _downloadState.value = DownloadUiState.PlaylistDownloading(
                         playlistTitle = playlist.title,
                         currentIndex = i + 1,
                         totalCount = totalCount,
                         currentItemTitle = item.title,
-                        currentItemProgress = 0f,
-                        overallProgress = overallProgress,
+                        currentItemProgress = itemProg,
+                        overallProgress = currentOverall,
+                        speed = statusText,
                         items = currentItems.toList()
                     )
+                    updateNotificationProgress(playlist.title, "${(i + 1)}/$totalCount • $statusText", currentOverall.toInt())
+                }
 
-                    val statusMsg = getString(R.string.playlist_downloading_progress, i + 1, totalCount, item.title)
-                    updateNotificationProgress(playlist.title, statusMsg, overallProgress.toInt())
-
-                    val downloadResult = repository.downloadMediaDetailed(
-                        url = item.sourceUrl,
-                        config = config,
-                        downloadId = downloadId
-                    ) { itemProg, _, statusText ->
-                        val currentOverall = (((i.toFloat() + (itemProg / 100f)) / totalCount.toFloat()) * 100f).coerceIn(0f, 100f)
-                        currentItems[i] = currentItems[i].copy(progress = itemProg)
-                        _downloadState.value = DownloadUiState.PlaylistDownloading(
-                            playlistTitle = playlist.title,
-                            currentIndex = i + 1,
-                            totalCount = totalCount,
-                            currentItemTitle = item.title,
-                            currentItemProgress = itemProg,
-                            overallProgress = currentOverall,
-                            speed = statusText,
-                            items = currentItems.toList()
-                        )
-                        updateNotificationProgress(playlist.title, "${(i + 1)}/$totalCount • $statusText", currentOverall.toInt())
+                if (downloadResult.isSuccess) {
+                    val detailedResult = downloadResult.getOrThrow()
+                    if (detailedResult.fallbackNotice != null) {
+                        fallbackOccurredNotice = detailedResult.fallbackNotice
                     }
-
-                    if (downloadResult.isSuccess) {
-                        val detailedResult = downloadResult.getOrThrow()
-                        if (detailedResult.fallbackNotice != null) {
-                            fallbackOccurredNotice = detailedResult.fallbackNotice
-                        }
-                        val tempFile = detailedResult.file
-                        val savedUri = MediaStoreSaver.saveToGallery(
-                            context = applicationContext,
-                            tempFile = tempFile,
-                            title = item.title,
-                            config = detailedResult.effectiveConfig
-                        )
-                        if (savedUri != null) {
-                            successCount++
-                            currentItems[i] = currentItems[i].copy(status = PlaylistItemStatus.COMPLETED, progress = 100f)
-                        } else {
-                            failedCount++
-                            currentItems[i] = currentItems[i].copy(status = PlaylistItemStatus.FAILED, error = "Failed to save")
-                        }
+                    val tempFile = detailedResult.file
+                    val savedUri = MediaStoreSaver.saveToGallery(
+                        context = applicationContext,
+                        tempFile = tempFile,
+                        title = item.title,
+                        config = detailedResult.effectiveConfig
+                    )
+                    if (savedUri != null) {
+                        successCount++
+                        currentItems[i] = currentItems[i].copy(status = PlaylistItemStatus.COMPLETED, progress = 100f)
                     } else {
                         failedCount++
-                        val err = downloadResult.exceptionOrNull()?.message ?: "Failed"
-                        currentItems[i] = currentItems[i].copy(status = PlaylistItemStatus.FAILED, error = err)
+                        currentItems[i] = currentItems[i].copy(status = PlaylistItemStatus.FAILED, error = "Failed to save")
                     }
-
-                    _downloadState.value = DownloadUiState.PlaylistDownloading(
-                        playlistTitle = playlist.title,
-                        currentIndex = (i + 1).coerceAtMost(totalCount),
-                        totalCount = totalCount,
-                        currentItemTitle = item.title,
-                        currentItemProgress = 100f,
-                        overallProgress = (((i + 1).toFloat() / totalCount.toFloat()) * 100f),
-                        items = currentItems.toList()
-                    )
+                } else {
+                    failedCount++
+                    val err = downloadResult.exceptionOrNull()?.message ?: "Failed"
+                    currentItems[i] = currentItems[i].copy(status = PlaylistItemStatus.FAILED, error = err)
                 }
 
-                if (isActive) {
-                    _downloadState.value = DownloadUiState.PlaylistSuccess(
-                        playlistTitle = playlist.title,
-                        totalCount = totalCount,
-                        successCount = successCount,
-                        failedCount = failedCount,
-                        items = currentItems.toList(),
-                        fallbackNotice = fallbackOccurredNotice
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Playlist download failed: ${e.message}", e)
-                _downloadState.value = DownloadUiState.Error(e.message ?: "Playlist download interrupted")
-            } finally {
-                pendingPlaylistToDownload = null
-                dismissDownloadNotification()
-                stopSelf()
+                _downloadState.value = DownloadUiState.PlaylistDownloading(
+                    playlistTitle = playlist.title,
+                    currentIndex = (i + 1).coerceAtMost(totalCount),
+                    totalCount = totalCount,
+                    currentItemTitle = item.title,
+                    currentItemProgress = 100f,
+                    overallProgress = (((i + 1).toFloat() / totalCount.toFloat()) * 100f),
+                    items = currentItems.toList()
+                )
             }
+
+            if (coroutineContext.isActive) {
+                _downloadState.value = DownloadUiState.PlaylistSuccess(
+                    playlistTitle = playlist.title,
+                    totalCount = totalCount,
+                    successCount = successCount,
+                    failedCount = failedCount,
+                    items = currentItems.toList(),
+                    fallbackNotice = fallbackOccurredNotice
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Playlist download error: ${e.message}", e)
+            _downloadState.value = DownloadUiState.Error(e.message ?: "Playlist download interrupted")
         }
     }
 
@@ -397,7 +470,11 @@ class DownloadService : Service() {
     }
 
     private fun handleCancelDownload() {
-        downloadJob?.cancel()
+        synchronized(queueLock) {
+            taskQueue.clear()
+            workerJob?.cancel()
+            workerJob = null
+        }
         currentDownloadId?.let { id ->
             serviceScope.launch(Dispatchers.IO) {
                 repository.cancelDownload(id)
@@ -479,8 +556,60 @@ class DownloadService : Service() {
         notificationManager.notify(DownloaderApplication.NOTIFICATION_ID, notification)
     }
 
+    private fun showCompletionNotification(title: String, uri: Uri, config: DownloadConfiguration) {
+        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, config.mimeType)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val pendingView = PendingIntent.getActivity(
+            this,
+            (uri.toString().hashCode() and 0x7FFFFFFF),
+            viewIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val contentText = if (config.mediaType == MediaType.VIDEO) {
+            getString(R.string.notification_saved_gallery, title)
+        } else {
+            getString(R.string.notification_saved_music, title)
+        }
+
+        val notifId = synchronized(queueLock) {
+            completionNotificationId++
+        }
+
+        val completeNotification = NotificationCompat.Builder(this, DownloaderApplication.DOWNLOAD_CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(contentText)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setAutoCancel(true)
+            .setContentIntent(pendingView)
+            .build()
+
+        notificationManager.notify(notifId, completeNotification)
+    }
+
+    private fun showErrorNotification(title: String, errorMessage: String) {
+        val notifId = synchronized(queueLock) {
+            completionNotificationId++
+        }
+        val errorNotification = NotificationCompat.Builder(this, DownloaderApplication.DOWNLOAD_CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(errorMessage)
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(notifId, errorNotification)
+    }
+
     override fun onDestroy() {
-        downloadJob?.cancel()
+        synchronized(queueLock) {
+            taskQueue.clear()
+            workerJob?.cancel()
+            workerJob = null
+        }
         dismissDownloadNotification()
         super.onDestroy()
     }
