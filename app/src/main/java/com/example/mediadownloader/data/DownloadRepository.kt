@@ -2,19 +2,33 @@ package com.example.mediadownloader.data
 
 import android.content.Context
 import android.util.Log
+import com.example.mediadownloader.R
 import com.example.mediadownloader.model.AudioFormat
+import com.example.mediadownloader.model.AudioQuality
 import com.example.mediadownloader.model.DownloadConfiguration
 import com.example.mediadownloader.model.DownloadFormat
 import com.example.mediadownloader.model.MediaMetadata
 import com.example.mediadownloader.model.MediaType
+import com.example.mediadownloader.model.PlaylistItem
+import com.example.mediadownloader.model.PlaylistItemStatus
+import com.example.mediadownloader.model.PlaylistMetadata
 import com.example.mediadownloader.model.VideoFormat
+import com.example.mediadownloader.model.VideoQuality
 import com.example.mediadownloader.util.LinkParser
+import com.example.mediadownloader.util.SpotifyHelper
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.util.UUID
+
+data class DownloadFileResult(
+    val file: File,
+    val effectiveConfig: DownloadConfiguration,
+    val fallbackNotice: String? = null
+)
 
 interface DownloadRepository {
     suspend fun fetchMetadata(url: String): Result<MediaMetadata>
@@ -24,12 +38,24 @@ interface DownloadRepository {
         downloadId: String,
         onProgress: (progress: Float, etaSeconds: Long, statusText: String) -> Unit
     ): Result<File>
+
     suspend fun downloadMedia(
         url: String,
         config: DownloadConfiguration,
         downloadId: String,
         onProgress: (progress: Float, etaSeconds: Long, statusText: String) -> Unit
     ): Result<File>
+
+    suspend fun downloadMediaDetailed(
+        url: String,
+        config: DownloadConfiguration,
+        downloadId: String,
+        onProgress: (progress: Float, etaSeconds: Long, statusText: String) -> Unit
+    ): Result<DownloadFileResult> {
+        val res = downloadMedia(url, config, downloadId, onProgress)
+        return res.map { DownloadFileResult(it, config, null) }
+    }
+
     suspend fun cancelDownload(downloadId: String): Boolean
     suspend fun updateEngine(): Result<String>
     suspend fun checkAndAutoUpdateEngineIfNeeded(force: Boolean = false): Result<String>?
@@ -51,6 +77,134 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
             YoutubeDLInitializer.ensureInitialized(context)
             Log.d(TAG, "Fetching metadata for: $url")
             val platform = LinkParser.detectPlatform(url)
+            val isPlaylistUrl = LinkParser.isPlaylist(url)
+
+            // 1. Handle Spotify links
+            if (platform == LinkParser.Platform.SPOTIFY) {
+                if (isPlaylistUrl) {
+                    val spotifyPlaylist = SpotifyHelper.fetchPlaylist(url)
+                    if (spotifyPlaylist != null && spotifyPlaylist.tracks.isNotEmpty()) {
+                        val items = spotifyPlaylist.tracks.mapIndexed { idx, track ->
+                            PlaylistItem(
+                                id = "sp_$idx",
+                                index = idx + 1,
+                                title = track.title,
+                                author = track.artist,
+                                durationSeconds = track.durationSeconds,
+                                thumbnailUrl = track.thumbnailUrl ?: spotifyPlaylist.thumbnailUrl,
+                                sourceUrl = track.searchQuery
+                            )
+                        }
+                        val playlistMeta = PlaylistMetadata(
+                            title = spotifyPlaylist.title,
+                            author = spotifyPlaylist.author,
+                            thumbnailUrl = spotifyPlaylist.thumbnailUrl,
+                            itemCount = items.size,
+                            items = items
+                        )
+                        return@withContext Result.success(
+                            MediaMetadata(
+                                url = url,
+                                title = spotifyPlaylist.title,
+                                author = spotifyPlaylist.author,
+                                thumbnailUrl = spotifyPlaylist.thumbnailUrl,
+                                durationSeconds = items.sumOf { it.durationSeconds },
+                                platform = LinkParser.Platform.SPOTIFY,
+                                isPlaylist = true,
+                                playlistInfo = playlistMeta,
+                                isAudioOnly = true
+                            )
+                        )
+                    }
+                }
+
+                // Single Spotify track
+                val spotifyTrack = SpotifyHelper.fetchTrack(url)
+                if (spotifyTrack != null) {
+                    return@withContext Result.success(
+                        MediaMetadata(
+                            url = url,
+                            title = "${spotifyTrack.artist} - ${spotifyTrack.title}",
+                            author = spotifyTrack.artist,
+                            thumbnailUrl = spotifyTrack.thumbnailUrl,
+                            durationSeconds = spotifyTrack.durationSeconds,
+                            platform = LinkParser.Platform.SPOTIFY,
+                            isPlaylist = false,
+                            isAudioOnly = true
+                        )
+                    )
+                }
+            }
+
+            // 2. Handle YouTube / YT Music Playlist
+            if (isPlaylistUrl && (platform == LinkParser.Platform.YOUTUBE || platform == LinkParser.Platform.YOUTUBE_MUSIC || platform == LinkParser.Platform.OTHER)) {
+                try {
+                    val playlistReq = YoutubeDLRequest(url).apply {
+                        addOption("--flat-playlist")
+                        addOption("-J")
+                        addOption("--no-warnings")
+                    }
+                    val playlistResp = YoutubeDL.getInstance().execute(playlistReq)
+                    val json = JSONObject(playlistResp.out)
+                    val plTitle = json.optString("title", "YouTube Playlist")
+                    val plUploader = json.optString("uploader", json.optString("channel", ""))
+                    val entries = json.optJSONArray("entries")
+                    val items = mutableListOf<PlaylistItem>()
+
+                    if (entries != null) {
+                        for (i in 0 until entries.length()) {
+                            val entry = entries.optJSONObject(i) ?: continue
+                            val id = entry.optString("id", "$i")
+                            val title = entry.optString("title", "Item ${i + 1}")
+                            val uploader = entry.optString("uploader", plUploader)
+                            val duration = entry.optLong("duration", 0L)
+                            val thumb = entry.optJSONArray("thumbnails")?.optJSONObject(0)?.optString("url")
+                            val itemUrl = entry.optString("url").let { u ->
+                                if (u.startsWith("http")) u else "https://www.youtube.com/watch?v=$id"
+                            }
+                            items.add(
+                                PlaylistItem(
+                                    id = id,
+                                    index = i + 1,
+                                    title = title,
+                                    author = uploader,
+                                    durationSeconds = duration,
+                                    thumbnailUrl = thumb,
+                                    sourceUrl = itemUrl
+                                )
+                            )
+                        }
+                    }
+
+                    if (items.isNotEmpty()) {
+                        val firstThumb = items.firstOrNull { !it.thumbnailUrl.isNullOrBlank() }?.thumbnailUrl
+                        val playlistMeta = PlaylistMetadata(
+                            title = plTitle,
+                            author = plUploader,
+                            thumbnailUrl = firstThumb,
+                            itemCount = items.size,
+                            items = items
+                        )
+                        return@withContext Result.success(
+                            MediaMetadata(
+                                url = url,
+                                title = plTitle,
+                                author = plUploader,
+                                thumbnailUrl = firstThumb,
+                                durationSeconds = items.sumOf { it.durationSeconds },
+                                platform = platform,
+                                isPlaylist = true,
+                                playlistInfo = playlistMeta,
+                                isAudioOnly = (platform == LinkParser.Platform.YOUTUBE_MUSIC && !url.contains("watch"))
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Flat playlist extraction failed, falling back to standard getInfo: ${e.message}")
+                }
+            }
+
+            // 3. Single video / media item info
             val request = YoutubeDLRequest(url).apply {
                 addOption("--no-playlist")
             }
@@ -61,7 +215,8 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                 author = videoInfo.uploader ?: videoInfo.uploaderId ?: "",
                 thumbnailUrl = videoInfo.thumbnail,
                 durationSeconds = videoInfo.duration.toLong(),
-                platform = platform
+                platform = platform,
+                isAudioOnly = platform == LinkParser.Platform.SPOTIFY
             )
             Result.success(metadata)
         } catch (e: Exception) {
@@ -76,7 +231,8 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
         downloadId: String,
         onProgress: (progress: Float, etaSeconds: Long, statusText: String) -> Unit
     ): Result<File> {
-        return downloadMedia(url, DownloadConfiguration.fromDownloadFormat(format), downloadId, onProgress)
+        val detailed = downloadMediaDetailed(url, DownloadConfiguration.fromDownloadFormat(format), downloadId, onProgress)
+        return detailed.map { it.file }
     }
 
     override suspend fun downloadMedia(
@@ -84,40 +240,119 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
         config: DownloadConfiguration,
         downloadId: String,
         onProgress: (progress: Float, etaSeconds: Long, statusText: String) -> Unit
-    ): Result<File> = withContext(Dispatchers.IO) {
+    ): Result<File> {
+        val detailed = downloadMediaDetailed(url, config, downloadId, onProgress)
+        return detailed.map { it.file }
+    }
+
+    override suspend fun downloadMediaDetailed(
+        url: String,
+        config: DownloadConfiguration,
+        downloadId: String,
+        onProgress: (progress: Float, etaSeconds: Long, statusText: String) -> Unit
+    ): Result<DownloadFileResult> = withContext(Dispatchers.IO) {
         try {
             YoutubeDLInitializer.ensureInitialized(context)
             val downloadDir = File(context.cacheDir, "downloads").apply { mkdirs() }
             cleanOldCacheFiles(downloadDir)
 
+            val platform = LinkParser.detectPlatform(url)
+
+            // Resolve target download URL and query
+            var targetUrl = url
+            var isAudioOnlySource = false
+
+            if (platform == LinkParser.Platform.SPOTIFY) {
+                isAudioOnlySource = true
+                val spTrack = SpotifyHelper.fetchTrack(url)
+                targetUrl = spTrack?.searchQuery ?: "ytsearch1:$url audio"
+            }
+
+            // Fallback requirement:
+            // "Jeśli wybierzesz mp4 a dany plik nie ma mp4 to pobierze mp3 i cie o tym powiadomii"
+            var effectiveConfig = config
+            var fallbackNotice: String? = null
+
+            if (config.mediaType == MediaType.VIDEO && isAudioOnlySource) {
+                effectiveConfig = DownloadConfiguration(
+                    mediaType = MediaType.AUDIO,
+                    audioFormat = AudioFormat.MP3,
+                    audioQuality = AudioQuality.BEST
+                )
+                fallbackNotice = context.getString(R.string.fallback_audio_only_to_mp3)
+                Log.i(TAG, "Audio-only source detected while video was chosen. Falling back to MP3.")
+            }
+
+            // Ensure FFmpeg is ready if required for audio extraction or video merging
+            val needsFfmpeg = effectiveConfig.mediaType == MediaType.AUDIO && effectiveConfig.audioFormat == AudioFormat.MP3
+            if (needsFfmpeg && !FFmpegEngineManager.isInstalled(context)) {
+                onProgress(5f, 0L, "Preparing media converter...")
+                FFmpegEngineManager.ensureFFmpegInstalled(context) { pct ->
+                    onProgress(pct.toFloat().coerceIn(0f, 90f), 0L, "Setting up converter ($pct%)...")
+                }
+            }
+
             val uniqueFileId = UUID.randomUUID().toString().substring(0, 8)
             val outputTemplate = "${downloadDir.absolutePath}/snapload_${uniqueFileId}.%(ext)s"
 
-            val request = YoutubeDLRequest(url).apply {
+            val request = YoutubeDLRequest(targetUrl).apply {
                 addOption("-o", outputTemplate)
                 addOption("--no-mtime")
                 addOption("--no-playlist")
 
-                if (config.mediaType == MediaType.VIDEO) {
-                    addOption("-f", config.videoQuality.ytdlFormatSelector)
-                    addOption("--merge-output-format", config.videoFormat.extension)
-                    addOption("--remux-video", config.videoFormat.extension)
+                if (effectiveConfig.mediaType == MediaType.VIDEO) {
+                    addOption("-f", effectiveConfig.videoQuality.ytdlFormatSelector)
+                    addOption("--merge-output-format", effectiveConfig.videoFormat.extension)
+                    addOption("--remux-video", effectiveConfig.videoFormat.extension)
                 } else {
                     addOption("-x")
-                    addOption("--audio-format", config.audioFormat.extension)
-                    addOption("--audio-quality", config.audioQuality.ytdlQuality)
+                    addOption("--audio-format", effectiveConfig.audioFormat.extension)
+                    addOption("--audio-quality", effectiveConfig.audioQuality.ytdlQuality)
                 }
             }
 
-            Log.d(TAG, "Executing download $downloadId for $url ($config)")
+            Log.d(TAG, "Executing download $downloadId for $targetUrl ($effectiveConfig)")
 
-            YoutubeDL.getInstance().execute(request, downloadId) { progress, etaInSeconds, line ->
-                val statusText = parseStatusLine(line, progress, etaInSeconds)
-                onProgress(progress, etaInSeconds, statusText)
+            var executionFailed = false
+            try {
+                YoutubeDL.getInstance().execute(request, downloadId) { progress, etaInSeconds, line ->
+                    val statusText = parseStatusLine(line, progress, etaInSeconds)
+                    onProgress(progress, etaInSeconds, statusText)
+                }
+            } catch (e: Exception) {
+                // Secondary fallback check: If video download failed due to no matching video streams
+                if (effectiveConfig.mediaType == MediaType.VIDEO && (e.message?.contains("format", ignoreCase = true) == true || e.message?.contains("Requested format", ignoreCase = true) == true)) {
+                    Log.w(TAG, "Video format failed. Retrying with MP3 fallback: ${e.message}")
+                    executionFailed = true
+                } else {
+                    throw e
+                }
+            }
+
+            if (executionFailed) {
+                effectiveConfig = DownloadConfiguration(
+                    mediaType = MediaType.AUDIO,
+                    audioFormat = AudioFormat.MP3,
+                    audioQuality = AudioQuality.BEST
+                )
+                fallbackNotice = context.getString(R.string.fallback_audio_only_to_mp3)
+
+                val retryRequest = YoutubeDLRequest(targetUrl).apply {
+                    addOption("-o", outputTemplate)
+                    addOption("--no-mtime")
+                    addOption("--no-playlist")
+                    addOption("-x")
+                    addOption("--audio-format", "mp3")
+                    addOption("--audio-quality", "0")
+                }
+                YoutubeDL.getInstance().execute(retryRequest, downloadId) { progress, etaInSeconds, line ->
+                    val statusText = parseStatusLine(line, progress, etaInSeconds)
+                    onProgress(progress, etaInSeconds, statusText)
+                }
             }
 
             // Locate final file avoiding temp/part/auxiliary files
-            val expectedExtension = config.extension
+            val expectedExtension = effectiveConfig.extension
             val exactFile = File(downloadDir, "snapload_${uniqueFileId}.$expectedExtension")
 
             val targetFile = if (exactFile.exists() && exactFile.length() > 0L) {
@@ -142,7 +377,7 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
 
             if (targetFile != null && targetFile.exists() && targetFile.length() > 0L) {
                 Log.i(TAG, "Download finished successfully: ${targetFile.absolutePath} (${targetFile.length()} bytes)")
-                Result.success(targetFile)
+                Result.success(DownloadFileResult(targetFile, effectiveConfig, fallbackNotice))
             } else {
                 val errorMsg = "Download completed, but output file not found in ${downloadDir.absolutePath}"
                 Log.e(TAG, errorMsg)
