@@ -60,7 +60,7 @@ object FFmpegEngineManager {
                         connectTimeout = 15000
                         readTimeout = 30000
                         instanceFollowRedirects = true
-                        setRequestProperty("User-Agent", "SnapLoad-Android/3.0.1")
+                        setRequestProperty("User-Agent", "SnapLoad-Android/3.0.2")
                     }
 
                     var responseCode = connection.responseCode
@@ -72,7 +72,7 @@ object FFmpegEngineManager {
                                 connectTimeout = 15000
                                 readTimeout = 30000
                                 instanceFollowRedirects = true
-                                setRequestProperty("User-Agent", "SnapLoad-Android/3.0.1")
+                                setRequestProperty("User-Agent", "SnapLoad-Android/3.0.2")
                             }
                             responseCode = connection.responseCode
                         }
