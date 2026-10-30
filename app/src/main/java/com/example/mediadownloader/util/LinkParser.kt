@@ -84,7 +84,7 @@ object LinkParser {
      */
     fun isAudioOnlyPlatform(url: String?): Boolean {
         val platform = detectPlatform(url)
-        return platform == Platform.SPOTIFY
+        return platform == Platform.SPOTIFY || platform == Platform.YOUTUBE_MUSIC
     }
 
     /**

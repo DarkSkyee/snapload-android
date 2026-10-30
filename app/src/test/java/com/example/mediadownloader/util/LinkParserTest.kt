@@ -90,6 +90,31 @@ class LinkParserTest {
     }
 
     @Test
+    fun isAudioOnlyPlatform_detection() {
+        assertTrue(LinkParser.isAudioOnlyPlatform("https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"))
+        assertTrue(LinkParser.isAudioOnlyPlatform("https://spotify.link/abc123xyz"))
+        assertTrue(LinkParser.isAudioOnlyPlatform("https://music.youtube.com/watch?v=123"))
+        assertFalse(LinkParser.isAudioOnlyPlatform("https://www.youtube.com/watch?v=123"))
+        assertFalse(LinkParser.isAudioOnlyPlatform("https://vm.tiktok.com/ZMxxxx/"))
+    }
+
+    @Test
+    fun spotifyHelper_toEmbedUrl_transformsUrls() {
+        assertEquals(
+            "https://open.spotify.com/embed/track/4cOdK2wGLETKBW3PvgPWqT",
+            SpotifyHelper.toEmbedUrl("https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT?si=12345")
+        )
+        assertEquals(
+            "https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M",
+            SpotifyHelper.toEmbedUrl("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M")
+        )
+        assertEquals(
+            "https://open.spotify.com/embed/album/4LH4d3cOWNNXdsqFd4G71m",
+            SpotifyHelper.toEmbedUrl("https://open.spotify.com/album/4LH4d3cOWNNXdsqFd4G71m")
+        )
+    }
+
+    @Test
     fun isSupported_validPlatforms() {
         assertTrue(LinkParser.isSupported("https://www.youtube.com/watch?v=123"))
         assertTrue(LinkParser.isSupported("https://vm.tiktok.com/ZMxxxx/"))
