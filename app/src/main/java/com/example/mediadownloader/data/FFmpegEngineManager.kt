@@ -15,8 +15,10 @@ import java.util.zip.ZipInputStream
 
 object FFmpegEngineManager {
     private const val TAG = "FFmpegManager"
-    private const val FFMPEG_RELEASE_URL =
+    private val FFMPEG_RELEASE_URLS = listOf(
+        "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.1/ffmpeg-arm64-v8a.zip",
         "https://github.com/DarkSkyee/snapload-android/releases/download/v3.0.0/ffmpeg-arm64-v8a.zip"
+    )
 
     private val mutex = Mutex()
 
@@ -49,70 +51,72 @@ object FFmpegEngineManager {
 
             val tempZip = File(context.cacheDir, "ffmpeg_download.tmp")
 
-            try {
-                Log.i(TAG, "Downloading FFmpeg native engine package from $FFMPEG_RELEASE_URL")
-                val url = URL(FFMPEG_RELEASE_URL)
-                var connection = (url.openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 15000
-                    readTimeout = 30000
-                    instanceFollowRedirects = true
-                    setRequestProperty("User-Agent", "SnapLoad-Android/3.0")
-                }
-
-                var responseCode = connection.responseCode
-                if (responseCode in 300..399) {
-                    val redirectUrl = connection.getHeaderField("Location")
-                    if (!redirectUrl.isNullOrBlank()) {
-                        connection.disconnect()
-                        connection = (URL(redirectUrl).openConnection() as HttpURLConnection).apply {
-                            connectTimeout = 15000
-                            readTimeout = 30000
-                            instanceFollowRedirects = true
-                            setRequestProperty("User-Agent", "SnapLoad-Android/3.0")
-                        }
-                        responseCode = connection.responseCode
+            for (ffmpegUrl in FFMPEG_RELEASE_URLS) {
+                try {
+                    Log.i(TAG, "Downloading FFmpeg native engine package from $ffmpegUrl")
+                    val url = URL(ffmpegUrl)
+                    var connection = (url.openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 15000
+                        readTimeout = 30000
+                        instanceFollowRedirects = true
+                        setRequestProperty("User-Agent", "SnapLoad-Android/3.0.1")
                     }
-                }
 
-                if (responseCode !in 200..299) {
-                    throw java.io.IOException("FFmpeg download failed with HTTP code $responseCode")
-                }
+                    var responseCode = connection.responseCode
+                    if (responseCode in 300..399) {
+                        val redirectUrl = connection.getHeaderField("Location")
+                        if (!redirectUrl.isNullOrBlank()) {
+                            connection.disconnect()
+                            connection = (URL(redirectUrl).openConnection() as HttpURLConnection).apply {
+                                connectTimeout = 15000
+                                readTimeout = 30000
+                                instanceFollowRedirects = true
+                                setRequestProperty("User-Agent", "SnapLoad-Android/3.0.1")
+                            }
+                            responseCode = connection.responseCode
+                        }
+                    }
 
-                val totalBytes = connection.contentLengthLong
-                var downloadedBytes = 0L
+                    if (responseCode !in 200..299) {
+                        throw java.io.IOException("FFmpeg download failed with HTTP code $responseCode")
+                    }
 
-                BufferedInputStream(connection.inputStream).use { input ->
-                    FileOutputStream(tempZip).use { output ->
-                        val buffer = ByteArray(32 * 1024)
-                        var bytesRead: Int
-                        var lastReported = -1
+                    val totalBytes = connection.contentLengthLong
+                    var downloadedBytes = 0L
 
-                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                            output.write(buffer, 0, bytesRead)
-                            downloadedBytes += bytesRead
-                            if (totalBytes > 0) {
-                                val percent = ((downloadedBytes * 100) / totalBytes).toInt()
-                                if (percent != lastReported) {
-                                    lastReported = percent
-                                    onProgress?.invoke(percent)
+                    BufferedInputStream(connection.inputStream).use { input ->
+                        FileOutputStream(tempZip).use { output ->
+                            val buffer = ByteArray(32 * 1024)
+                            var bytesRead: Int
+                            var lastReported = -1
+
+                            while (input.read(buffer).also { bytesRead = it } != -1) {
+                                output.write(buffer, 0, bytesRead)
+                                downloadedBytes += bytesRead
+                                if (totalBytes > 0) {
+                                    val percent = ((downloadedBytes * 100) / totalBytes).toInt()
+                                    if (percent != lastReported) {
+                                        lastReported = percent
+                                        onProgress?.invoke(percent)
+                                    }
                                 }
                             }
                         }
                     }
+
+                    Log.i(TAG, "Extracting FFmpeg to ${targetDir.absolutePath}...")
+                    unzip(tempZip, targetDir)
+                    tempZip.delete()
+
+                    val success = isInstalled(context)
+                    Log.i(TAG, "FFmpeg installed successfully: $success")
+                    if (success) return@withLock true
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed downloading FFmpeg from $ffmpegUrl: ${e.message}")
+                    if (tempZip.exists()) tempZip.delete()
                 }
-
-                Log.i(TAG, "Extracting FFmpeg to ${targetDir.absolutePath}...")
-                unzip(tempZip, targetDir)
-                tempZip.delete()
-
-                val success = isInstalled(context)
-                Log.i(TAG, "FFmpeg installed successfully: $success")
-                success
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to download / extract FFmpeg engine: ${e.message}", e)
-                tempZip.delete()
-                false
             }
+            isInstalled(context)
         }
     }
 
