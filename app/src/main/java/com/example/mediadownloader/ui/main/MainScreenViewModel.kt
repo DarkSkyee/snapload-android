@@ -1,6 +1,7 @@
 package com.example.mediadownloader.ui.main
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mediadownloader.data.AppPreferences
@@ -9,43 +10,54 @@ import com.example.mediadownloader.model.AudioFormat
 import com.example.mediadownloader.model.AudioQuality
 import com.example.mediadownloader.model.DownloadConfiguration
 import com.example.mediadownloader.model.DownloadFormat
-import com.example.mediadownloader.model.DownloadUiState
-import com.example.mediadownloader.model.DownloadedItem
+import com.example.mediadownloader.model.DownloadItem
+import com.example.mediadownloader.model.DownloadStatus
 import com.example.mediadownloader.model.MediaMetadata
 import com.example.mediadownloader.model.MediaType
+import com.example.mediadownloader.model.PlaylistBatchSelection
+import com.example.mediadownloader.model.PlaylistMetadata
+import com.example.mediadownloader.model.VideoFormat
+import com.example.mediadownloader.model.VideoQuality
 import com.example.mediadownloader.service.DownloadService
 import com.example.mediadownloader.updater.AppUpdateManager
 import com.example.mediadownloader.updater.ReleaseInfo
 import com.example.mediadownloader.updater.UpdateCheckResult
 import com.example.mediadownloader.util.LinkParser
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
+import java.util.UUID
 
 data class MainUiState(
     val urlInput: String = "",
     val detectedPlatform: LinkParser.Platform = LinkParser.Platform.UNKNOWN,
-    val selectedFormat: DownloadFormat = DownloadFormat.MP4,
-    val downloadConfig: DownloadConfiguration = DownloadConfiguration(),
     val isFetchingMetadata: Boolean = false,
     val metadata: MediaMetadata? = null,
     val metadataError: String? = null,
-    val engineVersion: String = "",
-    val appVersion: String = "1.0",
-    val engineUpdateMessage: String? = null,
-    val isUpdatingEngine: Boolean = false,
-    val isCheckingAppUpdate: Boolean = false,
-    val isDownloadingAppUpdate: Boolean = false,
-    val appUpdateProgress: Int = 0,
-    val availableRelease: ReleaseInfo? = null,
-    val appUpdateMessage: String? = null,
-    val currentLanguage: String = "en",
+    val selectedFormat: DownloadFormat = DownloadFormat.MP4,
+    val downloadConfig: DownloadConfiguration = DownloadConfiguration(),
+    val activeDownloads: List<DownloadItem> = emptyList(),
+    val currentLanguage: String = "pl",
     val autoUpdateEngine: Boolean = true,
     val autoUpdateApp: Boolean = true,
-    val recentDownloads: List<DownloadedItem> = emptyList()
+    val engineVersion: String = "Ready",
+    val appVersion: String = "1.0",
+    val isUpdatingEngine: Boolean = false,
+    val engineUpdateMessage: String? = null,
+    val isCheckingAppUpdate: Boolean = false,
+    val availableRelease: ReleaseInfo? = null,
+    val isDownloadingAppUpdate: Boolean = false,
+    val appUpdateProgress: Int = 0,
+    val updateErrorMessage: String? = null,
+    val downloadedApkFile: File? = null,
+    val playlistSelection: PlaylistBatchSelection = PlaylistBatchSelection(),
+    val isBatchDownloading: Boolean = false,
+    val batchProgressText: String? = null
 )
 
 class MainScreenViewModel(
@@ -53,67 +65,36 @@ class MainScreenViewModel(
     context: Context? = null
 ) : ViewModel() {
 
+    companion object {
+        private const val TAG = "MainScreenVM"
+        private const val METADATA_DEBOUNCE_MS = 600L
+    }
+
     private val preferences: AppPreferences? = context?.let { AppPreferences(it) }
     private val updateManager: AppUpdateManager? = context?.let { AppUpdateManager(it) }
 
     private val _uiState = MutableStateFlow(
         MainUiState(
-            engineVersion = repository.getEngineVersion(),
-            appVersion = updateManager?.getCurrentVersionName() ?: "1.0",
-            currentLanguage = preferences?.selectedLanguage ?: "en",
+            currentLanguage = preferences?.selectedLanguage ?: "pl",
             autoUpdateEngine = preferences?.autoUpdateEngine ?: true,
-            autoUpdateApp = preferences?.autoUpdateApp ?: true
+            autoUpdateApp = preferences?.autoUpdateApp ?: true,
+            engineVersion = repository.getEngineVersion(),
+            appVersion = updateManager?.getCurrentVersionName() ?: "1.0"
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
-    val downloadState: StateFlow<DownloadUiState> = DownloadService.downloadState
-
-    private var metadataJob: Job? = null
+    private var metadataFetchJob: Job? = null
 
     init {
-        // Observe download state to automatically record successful downloads in history
+        // Observe active downloads from DownloadService
         viewModelScope.launch {
-            DownloadService.downloadState.collect { state ->
-                when (state) {
-                    is DownloadUiState.Success -> {
-                        val item = DownloadedItem(
-                            id = System.currentTimeMillis().toString(),
-                            title = state.title,
-                            uriString = state.uri.toString(),
-                            format = state.format,
-                            config = state.config,
-                            sizeBytes = 0L,
-                            timestamp = System.currentTimeMillis()
-                        )
-                        _uiState.update { current ->
-                            current.copy(
-                                recentDownloads = listOf(item) + current.recentDownloads.filter { it.uriString != item.uriString }
-                            )
-                        }
-                    }
-                    is DownloadUiState.PlaylistSuccess -> {
-                        val item = DownloadedItem(
-                            id = System.currentTimeMillis().toString(),
-                            title = "${state.playlistTitle} (${state.successCount}/${state.totalCount})",
-                            uriString = "",
-                            format = DownloadFormat.MP3,
-                            config = DownloadConfiguration(mediaType = MediaType.AUDIO, audioFormat = AudioFormat.MP3),
-                            sizeBytes = 0L,
-                            timestamp = System.currentTimeMillis()
-                        )
-                        _uiState.update { current ->
-                            current.copy(
-                                recentDownloads = listOf(item) + current.recentDownloads
-                            )
-                        }
-                    }
-                    else -> {}
-                }
+            DownloadService.activeDownloads.collect { downloads ->
+                _uiState.update { it.copy(activeDownloads = downloads) }
             }
         }
 
-        // Silent auto-updates on launch
+        // Perform background engine / app auto-update checks on launch if enabled
         viewModelScope.launch {
             try {
                 repository.checkAndAutoUpdateEngineIfNeeded(force = false)
@@ -128,30 +109,49 @@ class MainScreenViewModel(
     }
 
     fun onUrlChanged(newUrl: String) {
-        val cleanUrl = LinkParser.extractUrl(newUrl) ?: newUrl.trim()
-        val platform = LinkParser.detectPlatform(cleanUrl)
-
+        val trimmed = newUrl.trim()
+        val platform = LinkParser.detectPlatform(trimmed)
         _uiState.update {
             it.copy(
                 urlInput = newUrl,
                 detectedPlatform = platform,
-                metadataError = null
+                metadata = null,
+                metadataError = null,
+                playlistSelection = PlaylistBatchSelection()
             )
         }
 
-        if (LinkParser.isSupported(cleanUrl) && cleanUrl != _uiState.value.metadata?.url) {
-            fetchMetadataForUrl(cleanUrl)
+        metadataFetchJob?.cancel()
+
+        if (trimmed.isNotBlank() && LinkParser.isValidUrl(trimmed)) {
+            metadataFetchJob = viewModelScope.launch {
+                delay(METADATA_DEBOUNCE_MS)
+                fetchMetadata(trimmed)
+            }
         }
     }
 
-    fun onPasteUrl(text: String?) {
-        val extractedUrl = LinkParser.extractUrl(text) ?: text?.trim().orEmpty()
-        onUrlChanged(extractedUrl)
+    fun handleSharedText(sharedText: String) {
+        val extractedUrl = LinkParser.extractUrl(sharedText)
+        if (!extractedUrl.isNullOrBlank()) {
+            onUrlChanged(extractedUrl)
+        } else {
+            onUrlChanged(sharedText.trim())
+        }
     }
 
-    fun handleSharedText(sharedText: String?) {
-        val extractedUrl = LinkParser.extractUrl(sharedText) ?: return
-        onUrlChanged(extractedUrl)
+    fun onClearInput() {
+        metadataFetchJob?.cancel()
+        _uiState.update {
+            it.copy(
+                urlInput = "",
+                detectedPlatform = LinkParser.Platform.UNKNOWN,
+                isFetchingMetadata = false,
+                metadata = null,
+                metadataError = null,
+                playlistSelection = PlaylistBatchSelection()
+            )
+        }
     }
 
     fun onFormatSelected(format: DownloadFormat) {
@@ -165,53 +165,140 @@ class MainScreenViewModel(
     }
 
     fun onConfigChanged(newConfig: DownloadConfiguration) {
+        val matchingFormat = when (newConfig.mediaType) {
+            MediaType.VIDEO -> when (newConfig.videoFormat) {
+                VideoFormat.MP4 -> DownloadFormat.MP4
+                VideoFormat.MKV -> DownloadFormat.MKV
+                VideoFormat.WEBM -> DownloadFormat.WEBM
+            }
+            MediaType.AUDIO -> when (newConfig.audioFormat) {
+                AudioFormat.MP3 -> DownloadFormat.MP3
+                AudioFormat.M4A -> DownloadFormat.M4A
+                AudioFormat.FLAC -> DownloadFormat.FLAC
+                AudioFormat.WAV -> DownloadFormat.WAV
+                AudioFormat.OPUS -> DownloadFormat.OPUS
+            }
+        }
+
         _uiState.update {
             it.copy(
                 downloadConfig = newConfig,
-                selectedFormat = newConfig.asDownloadFormat
+                selectedFormat = matchingFormat
             )
         }
     }
 
-    fun onClearInput() {
-        metadataJob?.cancel()
-        _uiState.update {
-            it.copy(
-                urlInput = "",
-                detectedPlatform = LinkParser.Platform.UNKNOWN,
-                metadata = null,
-                metadataError = null
-            )
+    fun togglePlaylistItemSelection(id: String) {
+        _uiState.update { state ->
+            val currentSelected = state.playlistSelection.selectedItemIds
+            val newSelected = if (currentSelected.contains(id)) {
+                currentSelected - id
+            } else {
+                currentSelected + id
+            }
+            state.copy(playlistSelection = state.playlistSelection.copy(selectedItemIds = newSelected))
         }
-        DownloadService.resetState()
+    }
+
+    fun selectAllPlaylistItems() {
+        val allIds = _uiState.value.metadata?.playlistInfo?.items?.map { it.id }?.toSet() ?: emptySet()
+        _uiState.update { state ->
+            state.copy(playlistSelection = state.playlistSelection.copy(selectedItemIds = allIds))
+        }
+    }
+
+    fun deselectAllPlaylistItems() {
+        _uiState.update { state ->
+            state.copy(playlistSelection = state.playlistSelection.copy(selectedItemIds = emptySet()))
+        }
     }
 
     fun startDownload(context: Context) {
-        val url = LinkParser.extractUrl(_uiState.value.urlInput) ?: _uiState.value.urlInput.trim()
+        val state = _uiState.value
+        val url = state.urlInput.trim()
         if (url.isBlank()) return
 
-        val metadata = _uiState.value.metadata
-        val config = _uiState.value.downloadConfig
+        val metadata = state.metadata
+        if (metadata != null && metadata.isPlaylist && metadata.playlistInfo != null) {
+            startBatchPlaylistDownload(context, metadata.playlistInfo)
+            return
+        }
 
-        if (metadata?.isPlaylist == true && metadata.playlistInfo != null) {
-            DownloadService.startPlaylistDownload(context, metadata.playlistInfo, config)
+        val title = metadata?.title ?: "Media_${System.currentTimeMillis()}"
+        val author = metadata?.author
+        val thumbnailUrl = metadata?.thumbnailUrl
+
+        DownloadService.startDownload(
+            context = context,
+            url = url,
+            config = state.downloadConfig,
+            title = title,
+            author = author,
+            thumbnailUrl = thumbnailUrl
+        )
+    }
+
+    private fun startBatchPlaylistDownload(context: Context, playlistInfo: PlaylistMetadata) {
+        val selectedIds = _uiState.value.playlistSelection.selectedItemIds
+        val itemsToDownload = if (selectedIds.isEmpty()) {
+            playlistInfo.items
         } else {
-            val title = metadata?.title ?: "SnapLoad_${System.currentTimeMillis()}"
-            DownloadService.startDownload(context, url, config, title)
+            playlistInfo.items.filter { selectedIds.contains(it.id) }
+        }
+
+        if (itemsToDownload.isEmpty()) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isBatchDownloading = true) }
+            for ((idx, item) in itemsToDownload.withIndex()) {
+                _uiState.update {
+                    it.copy(batchProgressText = "Queueing ${idx + 1}/${itemsToDownload.size}: ${item.title}")
+                }
+                DownloadService.startDownload(
+                    context = context,
+                    url = item.sourceUrl,
+                    config = _uiState.value.downloadConfig,
+                    title = item.title,
+                    author = item.author,
+                    thumbnailUrl = item.thumbnailUrl
+                )
+                delay(400) // Small spacing between starting tasks
+            }
+            _uiState.update {
+                it.copy(
+                    isBatchDownloading = false,
+                    batchProgressText = null
+                )
+            }
         }
     }
 
-    fun cancelDownload(context: Context) {
-        DownloadService.cancelDownload(context)
+    fun cancelDownload(downloadId: String) {
+        DownloadService.cancelDownload(downloadId)
     }
 
-    fun resetDownloadState() {
-        DownloadService.resetState()
+    fun retryDownload(context: Context, item: DownloadItem) {
+        DownloadService.startDownload(
+            context = context,
+            url = item.url,
+            config = item.config,
+            title = item.title,
+            author = item.author,
+            thumbnailUrl = item.thumbnailUrl
+        )
     }
 
-    fun setLanguage(language: String) {
-        preferences?.selectedLanguage = language
-        _uiState.update { it.copy(currentLanguage = language) }
+    fun removeDownload(downloadId: String) {
+        DownloadService.removeDownload(downloadId)
+    }
+
+    fun clearCompletedDownloads() {
+        DownloadService.clearCompleted()
+    }
+
+    fun setLanguage(languageCode: String) {
+        preferences?.selectedLanguage = languageCode
+        _uiState.update { it.copy(currentLanguage = languageCode) }
     }
 
     fun setAutoUpdateEngine(enabled: Boolean) {
@@ -226,52 +313,48 @@ class MainScreenViewModel(
 
     fun updateEngine() {
         if (_uiState.value.isUpdatingEngine) return
-
-        _uiState.update { it.copy(isUpdatingEngine = true, engineUpdateMessage = null) }
         viewModelScope.launch {
+            _uiState.update { it.copy(isUpdatingEngine = true, engineUpdateMessage = null) }
             val result = repository.updateEngine()
-            _uiState.update { current ->
-                current.copy(
+            _uiState.update {
+                it.copy(
                     isUpdatingEngine = false,
-                    engineVersion = repository.getEngineVersion(),
-                    engineUpdateMessage = result.getOrNull() ?: ("Engine update failed: " + result.exceptionOrNull()?.message)
+                    engineUpdateMessage = result.getOrNull() ?: result.exceptionOrNull()?.message,
+                    engineVersion = repository.getEngineVersion()
                 )
             }
         }
     }
 
-    fun clearEngineUpdateMessage() {
-        _uiState.update { it.copy(engineUpdateMessage = null) }
-    }
-
     fun checkForAppUpdates(manual: Boolean = true) {
-        val mgr = updateManager ?: return
+        val manager = updateManager ?: return
         if (_uiState.value.isCheckingAppUpdate) return
 
-        _uiState.update { it.copy(isCheckingAppUpdate = true, appUpdateMessage = null) }
         viewModelScope.launch {
-            val result = if (manual) mgr.checkForUpdates(force = true) else (mgr.checkAutoUpdateOnLaunch() ?: mgr.checkForUpdates(force = false))
-            _uiState.update { current ->
-                when (result) {
-                    is UpdateCheckResult.UpdateAvailable -> {
-                        current.copy(
+            _uiState.update { it.copy(isCheckingAppUpdate = true, updateErrorMessage = null) }
+            val checkResult = manager.checkForUpdates(force = manual)
+            when (checkResult) {
+                is UpdateCheckResult.UpdateAvailable -> {
+                    _uiState.update {
+                        it.copy(
                             isCheckingAppUpdate = false,
-                            availableRelease = result.releaseInfo,
-                            appUpdateMessage = null
+                            availableRelease = checkResult.releaseInfo
                         )
                     }
-                    is UpdateCheckResult.UpToDate -> {
-                        current.copy(
+                }
+                is UpdateCheckResult.UpToDate -> {
+                    _uiState.update {
+                        it.copy(
                             isCheckingAppUpdate = false,
-                            availableRelease = null,
-                            appUpdateMessage = if (manual) "SnapLoad is up to date (${result.currentVersion})" else null
+                            availableRelease = null
                         )
                     }
-                    is UpdateCheckResult.Error -> {
-                        current.copy(
+                }
+                is UpdateCheckResult.Error -> {
+                    _uiState.update {
+                        it.copy(
                             isCheckingAppUpdate = false,
-                            availableRelease = null,
-                            appUpdateMessage = if (manual) "Update check failed: ${result.message}" else null
+                            updateErrorMessage = if (manual) checkResult.message else null
                         )
                     }
                 }
@@ -279,99 +362,83 @@ class MainScreenViewModel(
         }
     }
 
-    fun downloadAndInstallUpdate(releaseInfo: ReleaseInfo) {
-        val mgr = updateManager ?: return
+    fun startDownloadingAppUpdate(releaseInfo: ReleaseInfo) {
+        val manager = updateManager ?: return
         val apkUrl = releaseInfo.apkDownloadUrl ?: return
 
-        val cachedApk = mgr.getDownloadedUpdateApk()
-        if (cachedApk != null) {
-            val installResult = mgr.promptInstallApk(cachedApk)
-            if (installResult.isFailure) {
-                val error = installResult.exceptionOrNull()
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isDownloadingAppUpdate = true,
+                    appUpdateProgress = 0,
+                    updateErrorMessage = null
+                )
+            }
+
+            val result = manager.downloadApk(apkUrl) { pct ->
+                _uiState.update { it.copy(appUpdateProgress = pct) }
+            }
+
+            result.onSuccess { apkFile ->
                 _uiState.update {
                     it.copy(
-                        appUpdateMessage = if (error is SecurityException) {
-                            "Please allow installing apps from SnapLoad in Settings, then tap Install again."
-                        } else {
-                            "Failed to start installer: ${error?.message}"
-                        }
+                        isDownloadingAppUpdate = false,
+                        downloadedApkFile = apkFile
                     )
                 }
-            }
-            return
-        }
-
-        _uiState.update { it.copy(isDownloadingAppUpdate = true, appUpdateProgress = 0) }
-
-        viewModelScope.launch {
-            val downloadResult = mgr.downloadApk(apkUrl) { percent ->
-                _uiState.update { it.copy(appUpdateProgress = percent) }
-            }
-
-            _uiState.update { it.copy(isDownloadingAppUpdate = false) }
-
-            if (downloadResult.isSuccess) {
-                val apkFile = downloadResult.getOrThrow()
-                val installResult = mgr.promptInstallApk(apkFile)
-                if (installResult.isFailure) {
-                    val error = installResult.exceptionOrNull()
-                    _uiState.update {
-                        it.copy(
-                            appUpdateMessage = if (error is SecurityException) {
-                                "Please allow installing apps from SnapLoad in Settings, then tap Install again."
-                            } else {
-                                "Failed to start installer: ${error?.message}"
-                            }
-                        )
-                    }
-                }
-            } else {
+                manager.promptInstallApk(apkFile)
+            }.onFailure { err ->
                 _uiState.update {
-                    it.copy(appUpdateMessage = "Failed to download update: ${downloadResult.exceptionOrNull()?.message}")
+                    it.copy(
+                        isDownloadingAppUpdate = false,
+                        updateErrorMessage = "Update download failed: ${err.message}"
+                    )
                 }
             }
         }
     }
 
     fun dismissUpdateDialog() {
-        _uiState.update { it.copy(availableRelease = null) }
+        _uiState.update { it.copy(availableRelease = null, updateErrorMessage = null) }
     }
 
-    fun clearAppUpdateMessage() {
-        _uiState.update { it.copy(appUpdateMessage = null) }
-    }
-
-    private fun fetchMetadataForUrl(url: String) {
-        metadataJob?.cancel()
-        metadataJob = viewModelScope.launch {
-            _uiState.update { it.copy(isFetchingMetadata = true, metadataError = null) }
-            val result = repository.fetchMetadata(url)
-            _uiState.update { current ->
-                if (result.isSuccess) {
-                    val meta = result.getOrNull()
-                    val autoAudioConfig = if (meta?.isAudioOnly == true && current.downloadConfig.mediaType == MediaType.VIDEO) {
-                        DownloadConfiguration(
-                            mediaType = MediaType.AUDIO,
-                            audioFormat = AudioFormat.MP3,
-                            audioQuality = AudioQuality.BEST
-                        )
-                    } else {
-                        current.downloadConfig
-                    }
-                    current.copy(
-                        isFetchingMetadata = false,
-                        metadata = meta,
-                        downloadConfig = autoAudioConfig,
-                        selectedFormat = autoAudioConfig.asDownloadFormat,
-                        metadataError = null
+    private suspend fun fetchMetadata(url: String) {
+        _uiState.update { it.copy(isFetchingMetadata = true, metadataError = null) }
+        val result = repository.fetchMetadata(url)
+        result.onSuccess { meta ->
+            _uiState.update {
+                val updatedConfig = if (meta.isAudioOnly) {
+                    it.downloadConfig.copy(
+                        mediaType = MediaType.AUDIO,
+                        audioFormat = AudioFormat.MP3
                     )
                 } else {
-                    current.copy(
-                        isFetchingMetadata = false,
-                        metadata = null,
-                        metadataError = "Failed to load preview (download may still work): ${result.exceptionOrNull()?.message}"
-                    )
+                    it.downloadConfig
                 }
+
+                val allIds = meta.playlistInfo?.items?.map { item -> item.id }?.toSet() ?: emptySet()
+                val playlistSelection = if (meta.isPlaylist) {
+                    PlaylistBatchSelection(selectedItemIds = allIds)
+                } else {
+                    PlaylistBatchSelection()
+                }
+
+                it.copy(
+                    isFetchingMetadata = false,
+                    metadata = meta,
+                    metadataError = null,
+                    downloadConfig = updatedConfig,
+                    selectedFormat = if (meta.isAudioOnly) DownloadFormat.MP3 else it.selectedFormat,
+                    playlistSelection = playlistSelection
+                )
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Metadata extraction failed: ${error.message}", error)
+            _uiState.update {
+                it.copy(
+                    isFetchingMetadata = false,
+                    metadataError = error.message ?: "Failed to load media info"
+                )
             }
         }
     }
