@@ -47,18 +47,14 @@ class MainActivity : ComponentActivity() {
         }
 
     override fun attachBaseContext(newBase: Context) {
-        val prefs = com.example.mediadownloader.data.AppPreferences(newBase)
-        val lang = prefs.selectedLanguage
-        super.attachBaseContext(LocaleHelper.createLocalizedContext(newBase, lang))
-    }
-
-    override fun applyOverrideConfiguration(overrideConfiguration: android.content.res.Configuration?) {
-        if (overrideConfiguration != null) {
-            val prefs = com.example.mediadownloader.data.AppPreferences(this)
+        val localizedBase = try {
+            val prefs = com.example.mediadownloader.data.AppPreferences(newBase)
             val lang = prefs.selectedLanguage
-            LocaleHelper.updateConfigurationLocale(overrideConfiguration, lang)
+            LocaleHelper.createLocalizedContext(newBase, lang)
+        } catch (_: Exception) {
+            newBase
         }
-        super.applyOverrideConfiguration(overrideConfiguration)
+        super.attachBaseContext(localizedBase)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -70,11 +66,11 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-            val localizedContext = remember(uiState.currentLanguage) {
-                LocaleHelper.applyLanguage(this@MainActivity, uiState.currentLanguage)
-            }
             val localizedConfiguration = remember(uiState.currentLanguage) {
                 LocaleHelper.getLocalizedConfiguration(resources.configuration, uiState.currentLanguage)
+            }
+            val localizedContext = remember(uiState.currentLanguage) {
+                LocaleHelper.createLocalizedContext(this@MainActivity, uiState.currentLanguage)
             }
 
             CompositionLocalProvider(

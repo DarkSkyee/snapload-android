@@ -49,13 +49,6 @@ object LocaleHelper {
             config.locale = targetLocale
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            try {
-                val localeManager = context.getSystemService(android.app.LocaleManager::class.java)
-                localeManager?.applicationLocales = LocaleList.forLanguageTags(languageCode)
-            } catch (_: Exception) {}
-        }
-
         @Suppress("DEPRECATION")
         res.updateConfiguration(config, res.displayMetrics)
 
