@@ -6,7 +6,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -176,9 +175,6 @@ class DownloadService : Service() {
                 if (downloadResult.isFailure) {
                     val error = downloadResult.exceptionOrNull()?.message ?: "Download failed"
                     _downloadState.value = DownloadUiState.Error(error)
-                    showCompletionNotification(initialTitle, "Error: $error", false, null, config.mimeType)
-                    stopForeground(STOP_FOREGROUND_DETACH)
-                    stopSelf()
                     return@launch
                 }
 
@@ -196,31 +192,19 @@ class DownloadService : Service() {
                 )
 
                 if (savedUri != null) {
-                    val message = getString(
-                        if (config.mediaType == MediaType.VIDEO) R.string.notification_saved_gallery else R.string.notification_saved_music,
-                        config.formatDisplayName
-                    )
                     _downloadState.value = DownloadUiState.Success(initialTitle, savedUri, config.asDownloadFormat, config)
-                    showCompletionNotification(
-                        initialTitle,
-                        message,
-                        true,
-                        savedUri,
-                        config.mimeType
-                    )
                 } else {
                     val errorMsg = getString(R.string.notification_failed)
                     _downloadState.value = DownloadUiState.Error(errorMsg)
-                    showCompletionNotification(initialTitle, errorMsg, false, null, config.mimeType)
                 }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Download service crashed: ${e.message}", e)
                 val errorMsg = e.message ?: "Unexpected error occurred"
                 _downloadState.value = DownloadUiState.Error(errorMsg)
-                showCompletionNotification(initialTitle, "Error: $errorMsg", false, null, config.mimeType)
             } finally {
-                stopForeground(STOP_FOREGROUND_DETACH)
+                // Ensure ongoing download notification is completely dismissed immediately upon 100% / completion
+                dismissDownloadNotification()
                 stopSelf()
             }
         }
@@ -234,8 +218,20 @@ class DownloadService : Service() {
             }
         }
         _downloadState.value = DownloadUiState.Idle
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        dismissDownloadNotification()
         stopSelf()
+    }
+
+    private fun dismissDownloadNotification() {
+        try {
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        } catch (_: Exception) {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+        try {
+            notificationManager.cancel(DownloaderApplication.NOTIFICATION_ID)
+        } catch (_: Exception) {}
     }
 
     private fun createNotification(
@@ -272,7 +268,7 @@ class DownloadService : Service() {
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingOpenApp)
             .setProgress(100, progress, isIndeterminate)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(com.example.mediadownloader.R.string.cancel), pendingCancel)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.cancel), pendingCancel)
             .build()
     }
 
@@ -296,45 +292,9 @@ class DownloadService : Service() {
         notificationManager.notify(DownloaderApplication.NOTIFICATION_ID, notification)
     }
 
-    private fun showCompletionNotification(
-        title: String,
-        message: String,
-        isSuccess: Boolean,
-        mediaUri: Uri?,
-        mimeType: String
-    ) {
-        val intent = if (isSuccess && mediaUri != null) {
-            Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(mediaUri, mimeType)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-        } else {
-            Intent(this, MainActivity::class.java)
-        }
-
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            2,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val icon = if (isSuccess) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_notify_error
-
-        val notification = NotificationCompat.Builder(this, DownloaderApplication.DOWNLOAD_CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(message)
-            .setSmallIcon(icon)
-            .setAutoCancel(true)
-            .setOngoing(false)
-            .setContentIntent(pendingIntent)
-            .build()
-
-        notificationManager.notify(DownloaderApplication.NOTIFICATION_ID, notification)
-    }
-
     override fun onDestroy() {
         downloadJob?.cancel()
+        dismissDownloadNotification()
         super.onDestroy()
     }
 }
