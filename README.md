@@ -1,15 +1,29 @@
 # SnapLoad (Android)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Platform-Android%208.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android 8.0+" />
-  <img src="https://img.shields.io/badge/Architecture-ARM64--v8a-blue?style=for-the-badge&logo=arm&logoColor=white" alt="ARM64" />
-  <img src="https://img.shields.io/badge/License-Non--Commercial%20(Attribution)-orange.svg?style=for-the-badge" alt="License" />
+  <a href="https://github.com/DarkSkyee/snapload-android/releases">
+    <img src="https://img.shields.io/github/downloads/DarkSkyee/snapload-android/total?style=for-the-badge&logo=github&color=10B981" alt="Total Downloads" />
+  </a>
+  <a href="https://github.com/DarkSkyee/snapload-android/stargazers">
+    <img src="https://img.shields.io/github/stars/DarkSkyee/snapload-android?style=for-the-badge&logo=github&color=F59E0B" alt="GitHub Stars" />
+  </a>
+  <a href="https://github.com/DarkSkyee/snapload-android/releases/latest">
+    <img src="https://img.shields.io/github/v/release/DarkSkyee/snapload-android?style=for-the-badge&logo=github&color=6366F1" alt="Latest Release" />
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-Non--Commercial%20(Attribution)-orange.svg?style=for-the-badge" alt="License" />
+  </a>
 </p>
 
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.3-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
-[![yt-dlp](https://img.shields.io/badge/Core-yt--dlp%20Engine-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://github.com/yt-dlp/yt-dlp)
-[![License](https://img.shields.io/badge/License-Non--Commercial%20(Attribution)-orange.svg?style=for-the-badge)](LICENSE)
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Android%208.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android 8.0+" />
+  <img src="https://img.shields.io/badge/Architecture-ARM64--v8a-007ACC?style=for-the-badge&logo=arm&logoColor=white" alt="ARM64" />
+  <img src="https://img.shields.io/badge/Kotlin-2.3-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin" />
+  <img src="https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white" alt="Material 3" />
+  <a href="https://github.com/yt-dlp/yt-dlp">
+    <img src="https://img.shields.io/badge/Core-yt--dlp%20Engine-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="yt-dlp" />
+  </a>
+</p>
 
 <br/>
 
@@ -22,6 +36,23 @@
     <img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F%20Download-Latest%20Release%20APK-6366F1?style=for-the-badge&logo=android&logoColor=white" height="42" alt="Download Latest Release APK" />
   </a>
 </p>
+
+> [!IMPORTANT]
+> ### 🛡️ Ostrzeżenie Google Play Protect / Play Protect Disclaimer
+>
+> **🇵🇱 Polski:**  
+> Podczas instalacji pobranego pliku APK system Android oraz usługa **Google Play Protect mogą (i najprawdopodobniej będą) wyświetlać ostrzeżenie**, informujące że aplikacja pochodzi z nieznanego źródła lub jest spoza sklepu Google Play.  
+> **Nie oznacza to w żaden sposób, że aplikacja zawiera złośliwy kod!** Jest to standardowy, automatyczny mechanizm bezpieczeństwa systemu Android dla wszystkich aplikacji instalowanych bezpośrednio z plików APK (tzw. *sideloading*).  
+> **SnapLoad jest projektem w 100% otwartoźródłowym (open-source)** — wszystkie operacje przetwarzania i pobierania multimediów odbywają się całkowicie lokalnie na Twoim urządzeniu, bez pośrednictwa jakichkolwiek zewnętrznych serwerów śledzących.  
+> ➡️ **Jak zainstalować:** W oknie ostrzeżenia kliknij **„Więcej szczegółów”** (More details), a następnie wybierz **„Zainstaluj mimo to”** (Install anyway).
+>
+> ---
+>
+> **🇬🇧 English:**  
+> When installing the downloaded APK, Android and **Google Play Protect may (and likely will) show a warning** that the app was downloaded outside the Google Play Store.  
+> **This does NOT mean the app contains harmful or malicious code!** This is purely Android's standard precautionary measure triggered for any directly installed application (*sideloaded APK*).  
+> **SnapLoad is 100% open-source** — all media processing and downloads run strictly on-device with zero tracking or telemetry servers.  
+> ➡️ **How to install:** In the warning prompt, tap **"More details"** and select **"Install anyway"**.
 
 ---
 
@@ -63,7 +94,8 @@ Your links, files, and queries never leave your device. Downloaded media is imme
 2. Download the latest `SnapLoad-v*.apk` package.
 3. Open the downloaded APK on your Android phone.
 4. If prompted, allow **"Install unknown apps"** for your browser or file manager.
-5. Enjoy completely free, local multimedia downloading!
+5. If Google Play Protect shows a prompt, tap **"More details"** ➔ **"Install anyway"**.
+6. Enjoy completely free, local multimedia downloading!
 
 ---
 
