@@ -11,31 +11,58 @@ data class CandidateVideo(
 
 object TrackMatcher {
     private val NOISE_WORDS = setOf(
-        "the", "a", "an", "and", "or", "of", "in", "on", "at", "to", "for", "with", "feat", "ft", "prod", "by"
+        "the", "a", "an", "and", "or", "of", "in", "on", "at", "to", "for", "with",
+        "feat", "ft", "prod", "by", "x", "w"
     )
 
-    // Unwanted tags that alter the audio compared to original track
+    // Unwanted tags that alter the audio or indicate non-song content
     private val AUDIO_ALTERING_TAGS = listOf(
         "remix", "mashup", "vixa", "instrumental", "karaoke", "slowed", "reverb",
-        "cover", "tribute", "parodia", "1 hour", "10 hour", "loop", "bass boosted",
-        "reaction", "live", "acoustic"
+        "cover", "tribute", "parodia", "parody", "1 hour", "10 hour", "loop",
+        "bass boosted", "bassboosted", "bass boost", "reaction", "live", "acoustic",
+        "sped up", "speed up", "nightcore", "8d audio", "type beat", "acapella",
+        "a cappella", "snippet", "teaser", "preview", "leak"
     )
 
     fun cleanTitleForSearch(title: String): String {
+        var cleaned = title
         // Remove (feat. ...), (with ...), (prod. ...), [feat. ...], etc.
-        var cleaned = title.replace(Regex("""[\(\[\{]\s*(?:feat\.|ft\.|with|prod\.)\s*[^)\]\}]*[\)\]\}]""", RegexOption.IGNORE_CASE), "")
-        // Remove (Official Video), (Official Audio), (Lyrics), etc.
-        cleaned = cleaned.replace(Regex("""[\(\[\{]\s*official\s*(?:video|audio|music video|lyric video)?\s*[\)\]\}]""", RegexOption.IGNORE_CASE), "")
+        cleaned = cleaned.replace(Regex("""[\(\[\{]\s*(?:feat\.|ft\.|with|prod\.)\s*[^)\]\}]*[\)\]\}]""", RegexOption.IGNORE_CASE), "")
+        // Remove trailing "feat. ..." or "- feat. ..." not in brackets
+        cleaned = cleaned.replace(Regex("""\s+(?:feat\.|ft\.|with|prod\.)\s+.*$""", RegexOption.IGNORE_CASE), "")
+        // Remove (Official Video), (Official Audio), (Lyrics), (Visualizer), (Teledysk), etc.
+        cleaned = cleaned.replace(Regex("""[\(\[\{]\s*(?:official\s*(?:video|audio|music video|lyric video|visualizer)?|lyrics?|audio|video|clip|teledysk|hd|4k)\s*[\)\]\}]""", RegexOption.IGNORE_CASE), "")
+        // Strip apostrophes so contractions (don't -> dont) are consistent with normalizeText
+        cleaned = cleaned.replace("'", "").replace("’", "").replace("`", "")
         // Remove quotes, commas, brackets
-        cleaned = cleaned.replace(Regex("""[,\"'“”„]"""), " ")
+        cleaned = cleaned.replace(Regex("""[,\"'“”„«»]"""), " ")
         cleaned = cleaned.replace(Regex("""\s+"""), " ").trim()
         return cleaned.ifBlank { title.trim() }
     }
 
     fun cleanArtistForSearch(artist: String): String {
-        var cleaned = artist.replace(Regex("""[,\"'“”„]"""), " ")
+        var cleaned = artist.replace("'", "").replace("’", "").replace("`", "")
+        cleaned = cleaned.replace(Regex("""[,\"'“”„«»]"""), " ")
         cleaned = cleaned.replace(Regex("""\s+"""), " ").trim()
         return cleaned.ifBlank { artist.trim() }
+    }
+
+    fun normalizeText(text: String): String {
+        return text.lowercase()
+            .replace("'", "")
+            .replace("’", "")
+            .replace("`", "")
+            .replace(Regex("""[^\p{L}\p{N}\s]"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+    }
+
+    fun extractWords(text: String): List<String> {
+        val norm = normalizeText(text)
+        if (norm.isBlank()) return emptyList()
+        val allWords = norm.split(" ").filter { it.isNotBlank() }
+        val nonNoise = allWords.filter { it !in NOISE_WORDS }
+        return if (nonNoise.isNotEmpty()) nonNoise else allWords
     }
 
     fun scoreCandidate(
@@ -44,60 +71,91 @@ object TrackMatcher {
         artists: List<String>,
         targetDurationSeconds: Long
     ): Double {
-        val cleanTarget = cleanTitleForSearch(trackTitle).lowercase()
-        val candTitleLower = candidate.title.lowercase()
-        val candUploaderLower = candidate.uploader.lowercase()
-        val targetLower = trackTitle.lowercase()
+        val cleanTargetTitle = cleanTitleForSearch(trackTitle)
+        val normTarget = normalizeText(cleanTargetTitle)
+        val normCandTitle = normalizeText(candidate.title)
+        val normCandUploader = normalizeText(candidate.uploader)
+        val candFullText = "$normCandTitle $normCandUploader"
 
-        val targetWords = cleanTarget.split(Regex("""[\s\-_.,!?:;'"()\[\]{}]+"""))
-            .map { it.trim() }
-            .filter { it.length >= 2 && it !in NOISE_WORDS }
+        val targetWords = extractWords(cleanTargetTitle)
+        val candTitleWords = extractWords(candidate.title)
+        val candTitleWordSet = candTitleWords.toSet()
 
         var score = 0.0
 
-        // 1. Title matching
-        if (cleanTarget.isNotBlank() && candTitleLower.contains(cleanTarget)) {
-            score += 60.0
+        // 1. Title matching with whole-phrase and word-boundary accuracy
+        val exactPhraseRegex = if (normTarget.isNotBlank()) {
+            Regex("""(?:\b|^)${Regex.escape(normTarget)}(?:\b|$)""")
+        } else null
+
+        val isExactTitleMatch = exactPhraseRegex?.containsMatchIn(normCandTitle) == true
+
+        if (isExactTitleMatch) {
+            score += 65.0
         } else if (targetWords.isNotEmpty()) {
-            val matches = targetWords.count { candTitleLower.contains(it) }
-            if (matches == targetWords.size) {
-                score += 50.0
-            } else if (matches > 0) {
-                score += (matches.toDouble() / targetWords.size) * 40.0
-            } else {
-                score -= 100.0
+            val matchedCount = targetWords.count { it in candTitleWordSet }
+            when {
+                matchedCount == targetWords.size -> {
+                    // All words present as discrete words in candidate title
+                    score += 50.0
+                }
+                matchedCount > 0 -> {
+                    // Partial word match - proportional
+                    val ratio = matchedCount.toDouble() / targetWords.size
+                    score += (ratio * 35.0)
+                }
+                else -> {
+                    // No title words matched at all
+                    score -= 100.0
+                }
             }
-        } else if (cleanTarget.isNotBlank() && candTitleLower.contains(cleanTarget)) {
-            score += 40.0
         } else {
             score -= 80.0
         }
 
-        // 2. Artist matching
-        val primaryArtist = artists.firstOrNull()?.lowercase() ?: ""
+        // 2. Artist matching (CRITICAL: prevents matching wrong artist with same/similar title)
+        val primaryArtist = artists.firstOrNull()?.trim() ?: ""
+        var hasArtistMatch = false
+
         if (primaryArtist.isNotBlank()) {
-            val pWords = primaryArtist.split(Regex("""[\s\-_.,!?:;'"()\[\]{}]+"""))
-                .map { it.trim() }
-                .filter { it.length >= 2 && it !in NOISE_WORDS }
+            val normPrimary = normalizeText(primaryArtist)
+            val primaryRegex = if (normPrimary.isNotBlank()) {
+                Regex("""(?:\b|^)${Regex.escape(normPrimary)}(?:\b|$)""")
+            } else null
 
-            if (candTitleLower.contains(primaryArtist) || candUploaderLower.contains(primaryArtist)) {
+            val primaryWords = extractWords(primaryArtist)
+            val candAllWordSet = (candTitleWords + extractWords(candidate.uploader)).toSet()
+
+            if (primaryRegex?.containsMatchIn(candFullText) == true) {
                 score += 35.0
-            } else if (pWords.isNotEmpty() && pWords.all { candTitleLower.contains(it) || candUploaderLower.contains(it) }) {
+                hasArtistMatch = true
+            } else if (primaryWords.isNotEmpty() && primaryWords.all { it in candAllWordSet }) {
                 score += 30.0
-            } else if (pWords.isNotEmpty() && pWords.any { candTitleLower.contains(it) || candUploaderLower.contains(it) }) {
+                hasArtistMatch = true
+            } else if (primaryWords.isNotEmpty() && primaryWords.any { it in candAllWordSet }) {
                 score += 15.0
+                hasArtistMatch = true
             }
         }
 
-        // Secondary artists bonus
+        // Check secondary artists
         for (sec in artists.drop(1).take(2)) {
-            val sLow = sec.lowercase()
-            if (sLow.length >= 3 && (candTitleLower.contains(sLow) || candUploaderLower.contains(sLow))) {
-                score += 10.0
+            val normSec = normalizeText(sec)
+            if (normSec.length >= 3) {
+                val secRegex = Regex("""(?:\b|^)${Regex.escape(normSec)}(?:\b|$)""")
+                if (secRegex.containsMatchIn(candFullText)) {
+                    score += 10.0
+                    hasArtistMatch = true
+                }
             }
         }
 
-        // 3. Duration match (CRITICAL)
+        // Severe penalty if artists were specified but candidate has ZERO artist match
+        if (!hasArtistMatch && artists.any { it.isNotBlank() }) {
+            score -= 80.0
+        }
+
+        // 3. Duration match (CRITICAL: separates full song from snippets / extended sets / wrong tracks)
         if (targetDurationSeconds > 0 && candidate.durationSeconds > 0) {
             val diff = Math.abs(candidate.durationSeconds - targetDurationSeconds)
             when {
@@ -105,20 +163,26 @@ object TrackMatcher {
                 diff <= 7 -> score += 35.0
                 diff <= 15 -> score += 20.0
                 diff <= 30 -> score += 5.0
-                diff <= 60 -> score -= 15.0
-                else -> score -= 40.0
+                diff <= 60 -> score -= 20.0
+                else -> score -= 50.0
             }
         }
 
-        // 4. Modifiers penalty (remix, instrumental, karaoke, slowed, vixa, etc.)
+        // 4. Modifiers penalty (remix, type beat, instrumental, karaoke, slowed, vixa, nightcore, snippet, etc.)
+        val targetLowerRaw = trackTitle.lowercase()
+        val candTitleLowerRaw = candidate.title.lowercase()
         for (tag in AUDIO_ALTERING_TAGS) {
-            if (candTitleLower.contains(tag) && !targetLower.contains(tag)) {
-                score -= 40.0
+            if (candTitleLowerRaw.contains(tag) && !targetLowerRaw.contains(tag)) {
+                if (tag in listOf("type beat", "snippet", "teaser", "preview", "leak")) {
+                    score -= 60.0
+                } else {
+                    score -= 40.0
+                }
             }
         }
 
         // 5. Official / Topic bonus
-        if (candTitleLower.contains("official") || candUploaderLower.endsWith("- topic")) {
+        if (normCandTitle.contains("official") || normCandUploader.endsWith("topic")) {
             score += 10.0
         }
 
@@ -127,7 +191,13 @@ object TrackMatcher {
 
     fun parseCandidates(jsonOutput: String): List<CandidateVideo> {
         return try {
-            val json = JSONObject(jsonOutput)
+            val trimmed = jsonOutput.trim()
+            val startIdx = trimmed.indexOf('{')
+            val endIdx = trimmed.lastIndexOf('}')
+            if (startIdx == -1 || endIdx == -1 || startIdx >= endIdx) return emptyList()
+            val cleanJson = trimmed.substring(startIdx, endIdx + 1)
+
+            val json = JSONObject(cleanJson)
             val entries = json.optJSONArray("entries") ?: return emptyList()
             val list = mutableListOf<CandidateVideo>()
             for (i in 0 until entries.length()) {
