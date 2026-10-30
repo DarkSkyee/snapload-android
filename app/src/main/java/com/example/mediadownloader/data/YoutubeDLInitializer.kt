@@ -26,6 +26,17 @@ object YoutubeDLInitializer {
             try {
                 Log.d(TAG, "Initializing YoutubeDL engine...")
                 YoutubeDL.getInstance().init(context.applicationContext)
+
+                // If FFmpeg directory exists, proactively ensure symlinks and binary aliases are verified
+                try {
+                    val ffmpegDir = FFmpegEngineManager.getFFmpegDir(context.applicationContext)
+                    if (ffmpegDir.exists()) {
+                        FFmpegEngineManager.repairSymlinksAndBinaries(context.applicationContext)
+                    }
+                } catch (t: Throwable) {
+                    Log.w(TAG, "FFmpeg startup check failed: ${t.message}")
+                }
+
                 isInitialized = true
                 val version = try {
                     YoutubeDL.getInstance().versionName(context.applicationContext)

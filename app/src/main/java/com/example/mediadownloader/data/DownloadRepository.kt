@@ -286,7 +286,12 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
             }
 
             // Ensure FFmpeg is ready if required for audio extraction or video merging
-            val needsFfmpeg = effectiveConfig.mediaType == MediaType.AUDIO && effectiveConfig.audioFormat == AudioFormat.MP3
+            val needsFfmpeg = effectiveConfig.mediaType == MediaType.AUDIO ||
+                    isAudioOnlySource ||
+                    platform == LinkParser.Platform.SPOTIFY ||
+                    platform == LinkParser.Platform.YOUTUBE_MUSIC ||
+                    !FFmpegEngineManager.isInstalled(context)
+
             if (needsFfmpeg && !FFmpegEngineManager.isInstalled(context)) {
                 onProgress(5f, 0L, "Preparing media converter...")
                 FFmpegEngineManager.ensureFFmpegInstalled(context) { pct ->
@@ -301,6 +306,7 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                 addOption("-o", outputTemplate)
                 addOption("--no-mtime")
                 addOption("--no-playlist")
+                addOption("--ffmpeg-location", FFmpegEngineManager.getFFmpegLocation(context))
 
                 if (effectiveConfig.mediaType == MediaType.VIDEO) {
                     addOption("-f", effectiveConfig.videoQuality.ytdlFormatSelector)
@@ -357,6 +363,7 @@ class DefaultDownloadRepository(private val context: Context) : DownloadReposito
                     addOption("-o", outputTemplate)
                     addOption("--no-mtime")
                     addOption("--no-playlist")
+                    addOption("--ffmpeg-location", FFmpegEngineManager.getFFmpegLocation(context))
                     addOption("-x")
                     addOption("--audio-format", "mp3")
                     addOption("--audio-quality", "0")
