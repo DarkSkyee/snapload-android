@@ -172,6 +172,42 @@ class MainScreenViewModelTest {
     }
 
     @Test
+    fun onUrlChanged_detectsYouTubeMusicPlatform() = runTest {
+        val ytmUrl = "https://music.youtube.com/watch?v=dQw4w9WgXcQ"
+        viewModel.onUrlChanged(ytmUrl)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(ytmUrl, state.urlInput)
+        assertEquals(LinkParser.Platform.YOUTUBE_MUSIC, state.detectedPlatform)
+    }
+
+    @Test
+    fun onUrlChanged_detectsSpotifyAndAutoSwitchesToAudio() = runTest {
+        val spotifyUrl = "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"
+        fakeRepository.metadataToReturn = Result.success(
+            MediaMetadata(
+                url = spotifyUrl,
+                title = "Rick Astley - Never Gonna Give You Up",
+                author = "Rick Astley",
+                platform = LinkParser.Platform.SPOTIFY,
+                isAudioOnly = true
+            )
+        )
+
+        viewModel.onUrlChanged(spotifyUrl)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(spotifyUrl, state.urlInput)
+        assertEquals(LinkParser.Platform.SPOTIFY, state.detectedPlatform)
+        assertNotNull(state.metadata)
+        assertEquals(MediaType.AUDIO, state.downloadConfig.mediaType)
+        assertEquals(AudioFormat.MP3, state.downloadConfig.audioFormat)
+        assertEquals(DownloadFormat.MP3, state.selectedFormat)
+    }
+
+    @Test
     fun updateEngine_executesSuccessfully() = runTest {
         fakeRepository.updateResult = Result.success("Zaktualizowano silnik yt-dlp")
         viewModel.updateEngine()
