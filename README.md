@@ -49,7 +49,7 @@
 
 ## 🌟 Highlights
 
-**SnapLoad** is an ultra-fast, privacy-first multimedia downloader application engineered for Android. Unlike web-based converters or remote cloud services, **SnapLoad runs 100% on-device** using local Python/yt-dlp binaries and an on-demand FFmpeg multimedia engine.
+**SnapLoad** is an ultra-fast, privacy-first multimedia downloader application engineered for Android. Unlike web-based converters or remote cloud services, **SnapLoad runs 100% on-device** using local Python/yt-dlp binaries and an embedded FFmpeg multimedia engine.
 
 Your links, files, and queries never leave your device. Downloaded media is immediately indexed and saved straight to your Android **Movies** or **Music** galleries via Scoped MediaStore integration.
 
@@ -57,8 +57,8 @@ Your links, files, and queries never leave your device. Downloaded media is imme
 
 ## ✨ Features (v3.0+)
 
-- 🪶 **Ultra-Lightweight (~21 MB base APK)**:
-  - Base APK shrunk by **>60%** (from ~56 MB down to **~21 MB**), packaging lightning-fast execution binaries and modular on-demand engine loading.
+- 🛡️ **100% Self-Contained & Offline-Ready**:
+  - Full embedded native execution runtimes (Python + FFmpeg) packaged directly in the APK for immediate offline audio conversion without downloading external dependencies.
 - 🎧 **Spotify & YouTube Music Support**:
   - Full native support for Spotify tracks, albums, and playlists as well as YouTube Music.
   - Automatically fetches metadata and matches high-fidelity audio streams.
