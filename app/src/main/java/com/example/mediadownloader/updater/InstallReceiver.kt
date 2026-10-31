@@ -39,7 +39,8 @@ class InstallReceiver : BroadcastReceiver() {
                     try {
                         context.startActivity(it)
                     } catch (e: Exception) {
-                        Log.e(TAG, "Failed to launch installer confirmation activity: ${e.message}", e)
+                        Log.e(TAG, "Failed to launch installer confirmation activity directly: ${e.message}", e)
+                        notifyPendingUserAction(context, it)
                     }
                 }
             }
@@ -68,21 +69,49 @@ class InstallReceiver : BroadcastReceiver() {
             PackageInstaller.STATUS_FAILURE_INVALID,
             PackageInstaller.STATUS_FAILURE_STORAGE -> {
                 Log.e(TAG, "Package installation failed: status=$status, message=$message")
-                // Cleanup invalid APK files to prevent Play Protect scanning alerts
-                if (status == PackageInstaller.STATUS_FAILURE_INVALID ||
-                    status == PackageInstaller.STATUS_FAILURE_INCOMPATIBLE
-                ) {
-                    if (!apkPath.isNullOrBlank()) {
-                        try {
-                            File(apkPath).delete()
-                        } catch (_: Exception) {}
-                    }
+                // Cleanup APK files on any installation failure/abort to prevent Play Protect scanning alerts
+                if (!apkPath.isNullOrBlank()) {
+                    try {
+                        val apkFile = File(apkPath)
+                        if (apkFile.exists()) {
+                            apkFile.delete()
+                        }
+                    } catch (_: Exception) {}
                 }
+                AppUpdateManager.cleanupUpdatesDir(context)
             }
 
             else -> {
                 Log.d(TAG, "Package installation status update: status=$status, message=$message")
             }
+        }
+    }
+
+    private fun notifyPendingUserAction(context: Context, confirmationIntent: Intent) {
+        try {
+            val pendingIntent = android.app.PendingIntent.getActivity(
+                context,
+                1002,
+                confirmationIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notification = androidx.core.app.NotificationCompat.Builder(
+                context,
+                com.example.mediadownloader.DownloaderApplication.DOWNLOAD_CHANNEL_ID
+            )
+                .setSmallIcon(context.applicationInfo.icon)
+                .setContentTitle("SnapLoad Update")
+                .setContentText("Tap to complete update installation")
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .build()
+
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+            notificationManager?.notify(1002, notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to post pending action notification: ${e.message}", e)
         }
     }
 }

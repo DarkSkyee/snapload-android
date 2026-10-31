@@ -49,5 +49,15 @@ class AppUpdateManagerTest {
         assertEquals("3.0.8", AppUpdateManager.cleanVersionTag("  3.0.8  "))
         assertEquals("3.1.2", AppUpdateManager.cleanVersionTag("v3.1.2"))
         assertEquals("3.1.2", AppUpdateManager.cleanVersionTag("  v3.1.2  "))
+        assertEquals("3.1.2-beta1", AppUpdateManager.cleanVersionTag("  v3.1.2-beta1  "))
+        assertEquals("3.1.2", AppUpdateManager.cleanVersionTag("V  3.1.2".replace(" ", "")))
+    }
+
+    @Test
+    fun isNewerVersion_handlesComplexSuffixes() {
+        // Semantic release comparisons
+        assertTrue(AppUpdateManager.isNewerVersion("3.1.3-patch1", "3.1.2"))
+        assertTrue(AppUpdateManager.isNewerVersion("v3.2.0-alpha", "3.1.9"))
+        assertFalse(AppUpdateManager.isNewerVersion("v3.1.2-final", "3.1.2"))
     }
 }

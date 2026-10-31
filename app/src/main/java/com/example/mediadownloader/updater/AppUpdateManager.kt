@@ -178,7 +178,10 @@ class AppUpdateManager(private val context: Context) {
         if (expectedTargetVersion != null) {
             val cleanExpected = cleanVersionTag(expectedTargetVersion)
             val cleanArchiveVersion = archiveInfo.versionName?.let { cleanVersionTag(it) }
-            if (cleanArchiveVersion != null && cleanArchiveVersion != cleanExpected) {
+            if (cleanArchiveVersion != null &&
+                cleanArchiveVersion != cleanExpected &&
+                cleanArchiveVersion.substringBefore('-') != cleanExpected.substringBefore('-')
+            ) {
                 apkFile.delete()
                 return Result.failure(
                     IllegalStateException("Downloaded APK version ($cleanArchiveVersion) does not match expected target ($cleanExpected)")
@@ -459,35 +462,46 @@ class AppUpdateManager(private val context: Context) {
             }
 
             val sessionId = packageInstaller.createSession(sessionParams)
-            val session = packageInstaller.openSession(sessionId)
-
-            session.use { activeSession ->
-                activeSession.openWrite("snapload_update_${System.currentTimeMillis()}", 0, apkFile.length()).use { out ->
-                    apkFile.inputStream().use { input ->
-                        input.copyTo(out)
+            var sessionCommitted = false
+            try {
+                packageInstaller.openSession(sessionId).use { activeSession ->
+                    activeSession.openWrite("base.apk", 0, apkFile.length()).use { out ->
+                        apkFile.inputStream().use { input ->
+                            input.copyTo(out)
+                        }
+                        activeSession.fsync(out)
                     }
-                    activeSession.fsync(out)
+
+                    val statusIntent = Intent(context, InstallReceiver::class.java).apply {
+                        action = InstallReceiver.ACTION_INSTALL_STATUS
+                        putExtra(InstallReceiver.EXTRA_APK_PATH, apkFile.absolutePath)
+                    }
+
+                    val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                    } else {
+                        PendingIntent.FLAG_UPDATE_CURRENT
+                    }
+
+                    val pendingIntent = PendingIntent.getBroadcast(
+                        context,
+                        sessionId,
+                        statusIntent,
+                        pendingIntentFlags
+                    )
+
+                    activeSession.commit(pendingIntent.intentSender)
+                    sessionCommitted = true
                 }
-
-                val statusIntent = Intent(context, InstallReceiver::class.java).apply {
-                    action = InstallReceiver.ACTION_INSTALL_STATUS
-                    putExtra(InstallReceiver.EXTRA_APK_PATH, apkFile.absolutePath)
+            } catch (e: Exception) {
+                if (!sessionCommitted) {
+                    try {
+                        packageInstaller.abandonSession(sessionId)
+                    } catch (abandonEx: Exception) {
+                        Log.w(TAG, "Failed to abandon failed session $sessionId: ${abandonEx.message}")
+                    }
                 }
-
-                val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-                } else {
-                    PendingIntent.FLAG_UPDATE_CURRENT
-                }
-
-                val pendingIntent = PendingIntent.getBroadcast(
-                    context,
-                    sessionId,
-                    statusIntent,
-                    pendingIntentFlags
-                )
-
-                activeSession.commit(pendingIntent.intentSender)
+                throw e
             }
 
             Result.success(Unit)
