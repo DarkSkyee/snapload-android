@@ -49,6 +49,7 @@ jobs:
       - name: Build Release APK
         env:
           JAVA_HOME: ${{ env.JAVA_HOME }}
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 }}
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD || 'snapload_release_2026' }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS || 'snapload' }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD || 'snapload_release_2026' }}
