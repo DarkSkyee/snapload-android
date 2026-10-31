@@ -456,7 +456,7 @@ class AppUpdateManager(private val context: Context) {
             val sessionParams = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
                 setAppPackageName(context.packageName)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                    setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
                     setInstallScenario(PackageManager.INSTALL_SCENARIO_FAST)
                 }
             }

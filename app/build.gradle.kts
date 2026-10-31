@@ -107,8 +107,8 @@ android {
     }
 
     dependenciesInfo {
-        includeInApk = false
-        includeInBundle = false
+        includeInApk = true
+        includeInBundle = true
     }
 
     packaging {
@@ -117,20 +117,13 @@ android {
       }
       resources {
         excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        excludes += "/META-INF/DEPENDENCIES"
-        excludes += "META-INF/**/LICENSE*"
-        excludes += "META-INF/**/NOTICE*"
-        excludes += "META-INF/**/DEPENDENCIES"
-        excludes += "META-INF/**/AL2.0"
-        excludes += "META-INF/**/LGPL2.1"
-        excludes += "META-INF/*.version"
-        excludes += "META-INF/*.properties"
-        excludes += "META-INF/**/*.version"
-        excludes += "META-INF/**/*.properties"
-        excludes += "META-INF/version-control-info.textproto"
-        excludes += "META-INF/androidx/**"
-        excludes += "META-INF/com/android/build/gradle/**"
-        excludes += "META-INF/kotlin-tooling-metadata.json"
+        excludes += "META-INF/DEPENDENCIES"
+        excludes += "META-INF/LICENSE"
+        excludes += "META-INF/LICENSE.txt"
+        excludes += "META-INF/license.txt"
+        excludes += "META-INF/NOTICE"
+        excludes += "META-INF/NOTICE.txt"
+        excludes += "META-INF/notice.txt"
       }
     }
 }
