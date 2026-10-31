@@ -88,11 +88,7 @@
 
         <receiver
             android:name=".updater.InstallReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.example.mediadownloader.ACTION_INSTALL_STATUS" />
-            </intent-filter>
-        </receiver>
+            android:exported="false" />
 
     </application>
 

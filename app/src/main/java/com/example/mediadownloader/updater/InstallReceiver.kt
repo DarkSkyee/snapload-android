@@ -36,8 +36,26 @@ class InstallReceiver : BroadcastReceiver() {
                 }
                 confirmationIntent?.let {
                     it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    val options = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        try {
+                            @Suppress("DEPRECATION")
+                            android.app.ActivityOptions.makeBasic().apply {
+                                setPendingIntentBackgroundActivityStartMode(
+                                    android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                                )
+                            }.toBundle()
+                        } catch (_: Exception) {
+                            null
+                        }
+                    } else {
+                        null
+                    }
                     try {
-                        context.startActivity(it)
+                        if (options != null) {
+                            context.startActivity(it, options)
+                        } else {
+                            context.startActivity(it)
+                        }
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to launch installer confirmation activity directly: ${e.message}", e)
                         notifyPendingUserAction(context, it)
@@ -100,7 +118,7 @@ class InstallReceiver : BroadcastReceiver() {
                 context,
                 com.example.mediadownloader.DownloaderApplication.DOWNLOAD_CHANNEL_ID
             )
-                .setSmallIcon(context.applicationInfo.icon)
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
                 .setContentTitle("SnapLoad Update")
                 .setContentText("Tap to complete update installation")
                 .setContentIntent(pendingIntent)

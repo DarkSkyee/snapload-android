@@ -59,5 +59,19 @@ class AppUpdateManagerTest {
         assertTrue(AppUpdateManager.isNewerVersion("3.1.3-patch1", "3.1.2"))
         assertTrue(AppUpdateManager.isNewerVersion("v3.2.0-alpha", "3.1.9"))
         assertFalse(AppUpdateManager.isNewerVersion("v3.1.2-final", "3.1.2"))
+
+        // Differing component lengths
+        assertTrue(AppUpdateManager.isNewerVersion("3.1.2.1", "3.1.2"))
+        assertFalse(AppUpdateManager.isNewerVersion("3.1.2", "3.1.2.1"))
+        assertFalse(AppUpdateManager.isNewerVersion("3.1.2.0", "3.1.2"))
+
+        // Leading zeroes
+        assertFalse(AppUpdateManager.isNewerVersion("03.01.02", "3.1.2"))
+        assertTrue(AppUpdateManager.isNewerVersion("03.01.03", "3.1.2"))
+
+        // Empty / malformed inputs
+        assertFalse(AppUpdateManager.isNewerVersion("", "3.1.2"))
+        assertFalse(AppUpdateManager.isNewerVersion("invalid", "3.1.2"))
+        assertFalse(AppUpdateManager.isNewerVersion("", ""))
     }
 }

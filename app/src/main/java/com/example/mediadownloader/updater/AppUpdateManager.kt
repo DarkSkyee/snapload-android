@@ -168,10 +168,10 @@ class AppUpdateManager(private val context: Context) {
             archiveInfo.versionCode.toLong()
         }
 
-        if (newCode <= currentCode) {
+        if (newCode < currentCode) {
             apkFile.delete()
             return Result.failure(
-                IllegalStateException("Downloaded APK versionCode ($newCode) is not newer than current ($currentCode)")
+                IllegalStateException("Downloaded APK versionCode ($newCode) is older than current ($currentCode)")
             )
         }
 
@@ -369,7 +369,11 @@ class AppUpdateManager(private val context: Context) {
                 break
             }
 
-            val totalLength = connection.contentLength.toLong()
+            val totalLength = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                connection.contentLengthLong
+            } else {
+                connection.contentLength.toLong()
+            }
             var downloadedBytes = 0L
 
             connection.inputStream.use { input ->
