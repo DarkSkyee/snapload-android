@@ -22,7 +22,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.example.mediadownloader.R
 import com.example.mediadownloader.updater.UpdateChannel
+import com.example.mediadownloader.util.LocaleHelper
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -54,11 +56,26 @@ data class MainUiState(
 
 class MainScreenViewModel(
     private val repository: DownloadRepository,
-    context: Context? = null
+    private val context: Context? = null
 ) : ViewModel() {
 
     private val preferences: AppPreferences? = context?.let { AppPreferences(it) }
     private val updateManager: AppUpdateManager? = context?.let { AppUpdateManager(it) }
+
+    private fun getLocalizedString(resId: Int, vararg formatArgs: Any): String {
+        val ctx = context ?: return ""
+        val lang = preferences?.selectedLanguage ?: "en"
+        val localizedCtx = try {
+            LocaleHelper.createLocalizedContext(ctx, lang)
+        } catch (_: Exception) {
+            ctx
+        }
+        return try {
+            localizedCtx.getString(resId, *formatArgs)
+        } catch (_: Exception) {
+            ctx.getString(resId, *formatArgs)
+        }
+    }
 
     private val _uiState = MutableStateFlow(
         MainUiState(
@@ -245,7 +262,7 @@ class MainScreenViewModel(
 
     fun setUpdateChannel(channel: UpdateChannel) {
         preferences?.updateChannel = channel
-        _uiState.update { it.copy(updateChannel = channel) }
+        _uiState.update { it.copy(updateChannel = channel, availableRelease = null) }
         checkForAppUpdates(manual = true)
     }
 
@@ -291,17 +308,19 @@ class MainScreenViewModel(
                         )
                     }
                     is UpdateCheckResult.UpToDate -> {
+                        val msg = getLocalizedString(R.string.update_up_to_date, result.currentVersion)
                         current.copy(
                             isCheckingAppUpdate = false,
                             availableRelease = null,
-                            appUpdateMessage = if (manual) "SnapLoad is up to date (${result.currentVersion})" else null
+                            appUpdateMessage = if (manual) msg.ifBlank { "SnapLoad is up to date (${result.currentVersion})" } else null
                         )
                     }
                     is UpdateCheckResult.Error -> {
+                        val msg = getLocalizedString(R.string.update_check_failed, result.message)
                         current.copy(
                             isCheckingAppUpdate = false,
                             availableRelease = null,
-                            appUpdateMessage = if (manual) "Update check failed: ${result.message}" else null
+                            appUpdateMessage = if (manual) msg.ifBlank { "Update check failed: ${result.message}" } else null
                         )
                     }
                 }
@@ -318,13 +337,15 @@ class MainScreenViewModel(
             val installResult = mgr.promptInstallApk(cachedApk)
             if (installResult.isFailure) {
                 val error = installResult.exceptionOrNull()
+                val permMsg = getLocalizedString(R.string.permission_install_unknown_apps).ifBlank {
+                    "Please allow installing apps from SnapLoad in Settings, then tap Install again."
+                }
+                val failMsg = getLocalizedString(R.string.update_install_failed, error?.message ?: "").ifBlank {
+                    "Failed to start installer: ${error?.message}"
+                }
                 _uiState.update {
                     it.copy(
-                        appUpdateMessage = if (error is SecurityException) {
-                            "Please allow installing apps from SnapLoad in Settings, then tap Install again."
-                        } else {
-                            "Failed to start installer: ${error?.message}"
-                        }
+                        appUpdateMessage = if (error is SecurityException) permMsg else failMsg
                     )
                 }
             }
@@ -345,19 +366,25 @@ class MainScreenViewModel(
                 val installResult = mgr.promptInstallApk(apkFile)
                 if (installResult.isFailure) {
                     val error = installResult.exceptionOrNull()
+                    val permMsg = getLocalizedString(R.string.permission_install_unknown_apps).ifBlank {
+                        "Please allow installing apps from SnapLoad in Settings, then tap Install again."
+                    }
+                    val failMsg = getLocalizedString(R.string.update_install_failed, error?.message ?: "").ifBlank {
+                        "Failed to start installer: ${error?.message}"
+                    }
                     _uiState.update {
                         it.copy(
-                            appUpdateMessage = if (error is SecurityException) {
-                                "Please allow installing apps from SnapLoad in Settings, then tap Install again."
-                            } else {
-                                "Failed to start installer: ${error?.message}"
-                            }
+                            appUpdateMessage = if (error is SecurityException) permMsg else failMsg
                         )
                     }
                 }
             } else {
+                val errorMsg = downloadResult.exceptionOrNull()?.message ?: ""
+                val dlFailMsg = getLocalizedString(R.string.update_download_failed, errorMsg).ifBlank {
+                    "Failed to download update: $errorMsg"
+                }
                 _uiState.update {
-                    it.copy(appUpdateMessage = "Failed to download update: ${downloadResult.exceptionOrNull()?.message}")
+                    it.copy(appUpdateMessage = dlFailMsg)
                 }
             }
         }

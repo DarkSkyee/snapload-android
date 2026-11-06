@@ -51,6 +51,9 @@ class AppUpdateManagerTest {
         assertEquals("3.1.2", AppUpdateManager.cleanVersionTag("  v3.1.2  "))
         assertEquals("3.1.2-beta1", AppUpdateManager.cleanVersionTag("  v3.1.2-beta1  "))
         assertEquals("3.1.2", AppUpdateManager.cleanVersionTag("V  3.1.2".replace(" ", "")))
+        assertEquals("3.2.0", AppUpdateManager.cleanVersionTag("SnapLoad v3.2.0"))
+        assertEquals("3.2.1-alpha", AppUpdateManager.cleanVersionTag("SnapLoad-v3.2.1-alpha"))
+        assertEquals("3.2.0", AppUpdateManager.cleanVersionTag("SnapLoad 3.2.0"))
     }
 
     @Test
@@ -149,5 +152,33 @@ class AppUpdateManagerTest {
             put("name", "SnapLoad v3.2.0")
         }
         assertFalse(AppUpdateManager.isAlphaRelease(stableJson))
+    }
+
+    @Test
+    fun hasApkAsset_detectsApkPresence() {
+        val releaseWithApk = org.json.JSONObject().apply {
+            put("assets", org.json.JSONArray().apply {
+                put(org.json.JSONObject().apply {
+                    put("name", "source.tar.gz")
+                })
+                put(org.json.JSONObject().apply {
+                    put("name", "SnapLoad-v3.2.0.apk")
+                    put("browser_download_url", "https://github.com/apk")
+                })
+            })
+        }
+        assertTrue(AppUpdateManager.hasApkAsset(releaseWithApk))
+
+        val releaseWithoutApk = org.json.JSONObject().apply {
+            put("assets", org.json.JSONArray().apply {
+                put(org.json.JSONObject().apply {
+                    put("name", "source.tar.gz")
+                })
+            })
+        }
+        assertFalse(AppUpdateManager.hasApkAsset(releaseWithoutApk))
+
+        val releaseWithNoAssets = org.json.JSONObject()
+        assertFalse(AppUpdateManager.hasApkAsset(releaseWithNoAssets))
     }
 }

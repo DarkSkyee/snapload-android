@@ -12,6 +12,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.example.mediadownloader.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -160,6 +162,7 @@ fun AppLogoIcon(
 fun AppBrandHeader(
     tagline: String,
     modifier: Modifier = Modifier,
+    title: String = stringResource(R.string.app_name),
     iconSize: Dp = 42.dp
 ) {
     Row(
@@ -170,7 +173,7 @@ fun AppBrandHeader(
         Spacer(modifier = Modifier.width(12.dp))
         Column {
             Text(
-                text = "SnapLoad",
+                text = title,
                 fontWeight = FontWeight.ExtraBold,
                 style = MaterialTheme.typography.titleLarge.copy(
                     letterSpacing = 0.5.sp

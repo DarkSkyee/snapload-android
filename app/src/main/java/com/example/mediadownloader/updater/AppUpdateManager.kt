@@ -47,7 +47,23 @@ class AppUpdateManager(private val context: Context) {
         private const val CHECK_INTERVAL_MS = 2 * 60 * 1000L // 2 minutes cooldown
 
         fun cleanVersionTag(tag: String): String {
-            return tag.trim().removePrefix("v").removePrefix("V").trim()
+            var cleaned = tag.trim()
+            if (cleaned.startsWith("SnapLoad", ignoreCase = true)) {
+                cleaned = cleaned.substring("SnapLoad".length).trim().removePrefix("-").trim()
+            }
+            return cleaned.removePrefix("v").removePrefix("V").trim()
+        }
+
+        fun hasApkAsset(release: JSONObject): Boolean {
+            val assets = release.optJSONArray("assets") ?: return false
+            for (i in 0 until assets.length()) {
+                val asset = assets.optJSONObject(i) ?: continue
+                val assetName = asset.optString("name", "")
+                if (assetName.endsWith(".apk", ignoreCase = true)) {
+                    return true
+                }
+            }
+            return false
         }
 
         fun isAlphaRelease(release: JSONObject): Boolean {
@@ -272,10 +288,8 @@ class AppUpdateManager(private val context: Context) {
             // Find best candidate for the selected channel
             val candidateRelease: JSONObject? = if (releasesJsonArray != null) {
                 findBestReleaseForChannel(releasesJsonArray, channel)
-            } else if (channel == UpdateChannel.STABLE) {
-                fetchLatestStableReleaseFallback(currentVersion)
             } else {
-                null
+                fetchLatestStableReleaseFallback(currentVersion)
             }
 
             if (candidateRelease == null) {
@@ -340,11 +354,14 @@ class AppUpdateManager(private val context: Context) {
 
         return when (channel) {
             UpdateChannel.STABLE -> {
-                nonDraftReleases.firstOrNull { !isAlphaRelease(it) }
+                nonDraftReleases.firstOrNull { !isAlphaRelease(it) && hasApkAsset(it) }
+                    ?: nonDraftReleases.firstOrNull { !isAlphaRelease(it) }
             }
             UpdateChannel.ALPHA -> {
-                val latestAlpha = nonDraftReleases.firstOrNull { isAlphaRelease(it) }
-                val latestStable = nonDraftReleases.firstOrNull { !isAlphaRelease(it) }
+                val latestAlpha = nonDraftReleases.firstOrNull { isAlphaRelease(it) && hasApkAsset(it) }
+                    ?: nonDraftReleases.firstOrNull { isAlphaRelease(it) }
+                val latestStable = nonDraftReleases.firstOrNull { !isAlphaRelease(it) && hasApkAsset(it) }
+                    ?: nonDraftReleases.firstOrNull { !isAlphaRelease(it) }
 
                 if (latestAlpha == null) {
                     latestStable

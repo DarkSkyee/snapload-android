@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.util.Log
+import com.example.mediadownloader.R
 import java.io.File
 
 class InstallReceiver : BroadcastReceiver() {
@@ -119,8 +120,8 @@ class InstallReceiver : BroadcastReceiver() {
                 com.example.mediadownloader.DownloaderApplication.DOWNLOAD_CHANNEL_ID
             )
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
-                .setContentTitle("SnapLoad Update")
-                .setContentText("Tap to complete update installation")
+                .setContentTitle(context.getString(R.string.notification_update_title))
+                .setContentText(context.getString(R.string.notification_update_tap_to_complete))
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
                 .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
