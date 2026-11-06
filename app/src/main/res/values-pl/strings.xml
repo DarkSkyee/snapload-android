@@ -1,6 +1,6 @@
 <resources>
-    <string name="app_name">SnapLoad</string>
-    <string name="app_tagline">Błyskawiczne pobieranie wideo i muzyki • 100% na urządzeniu</string>
+    <string name="app_name">SnapLoad Alpha</string>
+    <string name="app_tagline">Błyskawiczne pobieranie wideo i muzyki • Wersja Alpha</string>
     <string name="tagline_platforms">YouTube Shorts i TikTok • 100% na urządzeniu</string>
 
     <!-- Sekcja wprowadzania linku -->

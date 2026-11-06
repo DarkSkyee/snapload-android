@@ -17,14 +17,14 @@ android {
         applicationId = "com.example.mediadownloader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 22
-        versionName = "3.2.0"
+        versionCode = 23
+        versionName = "3.2.0-alpha"
         ndk {
             abiFilters.clear()
             abiFilters.add("arm64-v8a")
         }
-        buildConfigField("boolean", "IS_ALPHA", "false")
-        buildConfigField("String", "BUILD_BRANCH", "\"main\"")
+        buildConfigField("boolean", "IS_ALPHA", "true")
+        buildConfigField("String", "BUILD_BRANCH", "\"alpha\"")
     }
 
     val localProps = Properties().apply {
