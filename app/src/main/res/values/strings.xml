@@ -123,9 +123,12 @@
     <string name="update_dialog_button_later">Later</string>
     <string name="update_downloading">Downloading update… %1$d%%</string>
     <string name="update_download_failed">Failed to download update APK: %1$s</string>
+    <string name="update_install_failed">Failed to start installer: %1$s</string>
     <string name="update_up_to_date">SnapLoad is up to date (%1$s)</string>
     <string name="update_check_failed">Could not check updates: %1$s</string>
     <string name="permission_install_unknown_apps">Please allow installing apps from SnapLoad in Settings, then tap Install again.</string>
+    <string name="notification_update_title">SnapLoad Update</string>
+    <string name="notification_update_tap_to_complete">Tap to complete update installation</string>
 
     <!-- Update Channels & Alpha Branch -->
     <string name="settings_update_channel_title">Update Channel</string>

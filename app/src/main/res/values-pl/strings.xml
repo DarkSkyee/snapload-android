@@ -123,9 +123,12 @@
     <string name="update_dialog_button_later">Później</string>
     <string name="update_downloading">Pobieranie aktualizacji… %1$d%%</string>
     <string name="update_download_failed">Błąd pobierania pliku APK: %1$s</string>
+    <string name="update_install_failed">Nie udało się uruchomić instalatora: %1$s</string>
     <string name="update_up_to_date">SnapLoad jest aktualny (%1$s)</string>
     <string name="update_check_failed">Nie udało się sprawdzić aktualizacji: %1$s</string>
     <string name="permission_install_unknown_apps">Zezwól na instalowanie aplikacji ze SnapLoad w Ustawieniach, a następnie dotknij Zainstaluj ponownie.</string>
+    <string name="notification_update_title">Aktualizacja SnapLoad</string>
+    <string name="notification_update_tap_to_complete">Dotknij, aby ukończyć instalację aktualizacji</string>
 
     <!-- Kanały aktualizacji i gałąź Alpha -->
     <string name="settings_update_channel_title">Kanał aktualizacji</string>

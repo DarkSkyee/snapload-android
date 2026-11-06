@@ -286,17 +286,26 @@ fun AppMenuBottomSheet(
                             Spacer(modifier = Modifier.height(10.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = stringResource(R.string.settings_app_version_label, appVersion),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = stringResource(R.string.settings_app_version_label, appVersion),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    if (isAlphaBuild) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        AlphaBadge()
+                                    }
+                                }
                                 Text(
                                     text = stringResource(
                                         R.string.settings_app_channel_label,
-                                        if (updateChannel == UpdateChannel.ALPHA) "Alpha" else "Stable"
+                                        stringResource(
+                                            if (updateChannel == UpdateChannel.ALPHA) R.string.channel_alpha_title else R.string.channel_stable_title
+                                        )
                                     ),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = if (updateChannel == UpdateChannel.ALPHA) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
