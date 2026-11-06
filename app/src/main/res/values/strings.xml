@@ -126,4 +126,17 @@
     <string name="update_up_to_date">SnapLoad is up to date (%1$s)</string>
     <string name="update_check_failed">Could not check updates: %1$s</string>
     <string name="permission_install_unknown_apps">Please allow installing apps from SnapLoad in Settings, then tap Install again.</string>
+
+    <!-- Update Channels & Alpha Branch -->
+    <string name="settings_update_channel_title">Update Channel</string>
+    <string name="channel_stable_title">Stable (main)</string>
+    <string name="channel_stable_desc">Official releases</string>
+    <string name="channel_alpha_title">Alpha</string>
+    <string name="channel_alpha_desc">Experimental preview</string>
+    <string name="alpha_badge_text">ALPHA</string>
+    <string name="alpha_build_banner">Alpha Preview: Running branch alpha build.</string>
+    <string name="settings_app_channel_label">Channel: %1$s</string>
+    <string name="settings_alpha_warning">You are running an experimental Alpha build from branch alpha. Features may change or contain bugs.</string>
+    <string name="update_banner_title_alpha">New Alpha %1$s is available!</string>
+    <string name="update_dialog_alpha_badge">Alpha Release</string>
 </resources>

@@ -2,6 +2,7 @@ package com.example.mediadownloader.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.mediadownloader.updater.UpdateChannel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,6 +23,9 @@ class AppPreferences(context: Context) {
 
     private val _quickDownloadOnShareFlow = MutableStateFlow(getQuickDownloadOnShareInternal())
     val quickDownloadOnShareFlow: StateFlow<Boolean> = _quickDownloadOnShareFlow.asStateFlow()
+
+    private val _updateChannelFlow = MutableStateFlow(getUpdateChannelInternal())
+    val updateChannelFlow: StateFlow<UpdateChannel> = _updateChannelFlow.asStateFlow()
 
     var selectedLanguage: String
         get() = getLanguageInternal()
@@ -49,6 +53,13 @@ class AppPreferences(context: Context) {
         set(value) {
             prefs.edit().putBoolean(KEY_QUICK_DOWNLOAD_ON_SHARE, value).apply()
             _quickDownloadOnShareFlow.value = value
+        }
+
+    var updateChannel: UpdateChannel
+        get() = getUpdateChannelInternal()
+        set(value) {
+            prefs.edit().putString(KEY_UPDATE_CHANNEL, value.channelKey).apply()
+            _updateChannelFlow.value = value
         }
 
     var lastEngineUpdateCheck: Long
@@ -79,12 +90,22 @@ class AppPreferences(context: Context) {
         return prefs.getBoolean(KEY_QUICK_DOWNLOAD_ON_SHARE, false)
     }
 
+    private fun getUpdateChannelInternal(): UpdateChannel {
+        val saved = prefs.getString(KEY_UPDATE_CHANNEL, null)
+        return if (saved != null) {
+            UpdateChannel.fromKey(saved)
+        } else {
+            if (com.example.mediadownloader.BuildConfig.IS_ALPHA) UpdateChannel.ALPHA else UpdateChannel.STABLE
+        }
+    }
+
     companion object {
         private const val PREFS_NAME = "snapload_preferences"
         private const val KEY_LANGUAGE = "key_language"
         private const val KEY_AUTO_UPDATE_ENGINE = "key_auto_update_engine"
         private const val KEY_AUTO_UPDATE_APP = "key_auto_update_app"
         private const val KEY_QUICK_DOWNLOAD_ON_SHARE = "key_quick_download_on_share"
+        private const val KEY_UPDATE_CHANNEL = "key_update_channel"
         private const val KEY_LAST_ENGINE_CHECK = "key_last_engine_check"
         private const val KEY_LAST_APP_CHECK = "key_last_app_check"
     }

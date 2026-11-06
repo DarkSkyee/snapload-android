@@ -126,4 +126,17 @@
     <string name="update_up_to_date">SnapLoad jest aktualny (%1$s)</string>
     <string name="update_check_failed">Nie udało się sprawdzić aktualizacji: %1$s</string>
     <string name="permission_install_unknown_apps">Zezwól na instalowanie aplikacji ze SnapLoad w Ustawieniach, a następnie dotknij Zainstaluj ponownie.</string>
+
+    <!-- Kanały aktualizacji i gałąź Alpha -->
+    <string name="settings_update_channel_title">Kanał aktualizacji</string>
+    <string name="channel_stable_title">Stabilny (main)</string>
+    <string name="channel_stable_desc">Wydania oficjalne</string>
+    <string name="channel_alpha_title">Alpha</string>
+    <string name="channel_alpha_desc">Wersje testowe</string>
+    <string name="alpha_badge_text">ALPHA</string>
+    <string name="alpha_build_banner">Wersja Alpha: Uruchomiono wersję testową z gałęzi alpha.</string>
+    <string name="settings_app_channel_label">Kanał: %1$s</string>
+    <string name="settings_alpha_warning">Korzystasz z eksperymentalnej wersji Alpha z gałęzi alpha. Funkcje mogą ulegać zmianie lub zawierać błędy.</string>
+    <string name="update_banner_title_alpha">Dostępna nowa wersja Alpha %1$s!</string>
+    <string name="update_dialog_alpha_badge">Wydanie Alpha</string>
 </resources>

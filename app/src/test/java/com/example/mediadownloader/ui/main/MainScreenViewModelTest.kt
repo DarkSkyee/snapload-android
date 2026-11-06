@@ -172,6 +172,17 @@ class MainScreenViewModelTest {
     }
 
     @Test
+    fun setUpdateChannel_updatesState() {
+        assertEquals(com.example.mediadownloader.updater.UpdateChannel.STABLE, viewModel.uiState.value.updateChannel)
+
+        viewModel.setUpdateChannel(com.example.mediadownloader.updater.UpdateChannel.ALPHA)
+        assertEquals(com.example.mediadownloader.updater.UpdateChannel.ALPHA, viewModel.uiState.value.updateChannel)
+
+        viewModel.setUpdateChannel(com.example.mediadownloader.updater.UpdateChannel.STABLE)
+        assertEquals(com.example.mediadownloader.updater.UpdateChannel.STABLE, viewModel.uiState.value.updateChannel)
+    }
+
+    @Test
     fun onClearInput_resetsAllFields() = runTest {
         viewModel.onUrlChanged("https://youtu.be/123")
         advanceUntilIdle()

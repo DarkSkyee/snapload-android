@@ -103,6 +103,7 @@ import com.example.mediadownloader.model.DownloadedItem
 import com.example.mediadownloader.model.MediaMetadata
 import com.example.mediadownloader.model.MediaType
 import com.example.mediadownloader.model.PlaylistItemStatus
+import com.example.mediadownloader.ui.components.AlphaBadge
 import com.example.mediadownloader.ui.components.AppBrandHeader
 import com.example.mediadownloader.ui.components.AppMenuBottomSheet
 import com.example.mediadownloader.ui.components.BouncyButton
@@ -148,10 +149,16 @@ fun MainScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    AppBrandHeader(
-                        tagline = stringResource(R.string.app_tagline),
-                        iconSize = 36.dp
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AppBrandHeader(
+                            tagline = stringResource(R.string.app_tagline),
+                            iconSize = 36.dp
+                        )
+                        if (uiState.isAlphaBuild) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            AlphaBadge()
+                        }
+                    }
                 },
                 actions = {
                     // Quick language toggle
@@ -210,12 +217,38 @@ fun MainScreen(
         ) {
             item { Spacer(modifier = Modifier.height(4.dp)) }
 
+            // Alpha Build Notice Banner
+            if (uiState.isAlphaBuild) {
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.45f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AlphaBadge()
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = stringResource(R.string.alpha_build_banner),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+
             // 0. Update Available Banner
             uiState.availableRelease?.let { release ->
                 item {
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
+                        color = if (release.isAlpha) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -225,21 +258,30 @@ fun MainScreen(
                             Icon(
                                 imageVector = Icons.Default.SystemUpdate,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = if (release.isAlpha) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(26.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stringResource(R.string.update_banner_title, release.versionName),
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = stringResource(
+                                            if (release.isAlpha) R.string.update_banner_title_alpha else R.string.update_banner_title,
+                                            release.versionName
+                                        ),
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (release.isAlpha) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    if (release.isAlpha) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        AlphaBadge()
+                                    }
+                                }
                                 Text(
                                     text = stringResource(R.string.update_banner_subtitle),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                    color = (if (release.isAlpha) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onPrimaryContainer).copy(alpha = 0.8f)
                                 )
                             }
                             Spacer(modifier = Modifier.width(8.dp))
@@ -423,6 +465,8 @@ fun MainScreen(
             autoUpdateEngine = uiState.autoUpdateEngine,
             autoUpdateApp = uiState.autoUpdateApp,
             quickDownloadOnShare = uiState.quickDownloadOnShare,
+            updateChannel = uiState.updateChannel,
+            isAlphaBuild = uiState.isAlphaBuild,
             engineVersion = uiState.engineVersion,
             appVersion = uiState.appVersion,
             isUpdatingEngine = uiState.isUpdatingEngine,
@@ -433,6 +477,7 @@ fun MainScreen(
             onAutoUpdateEngineChange = { viewModel.setAutoUpdateEngine(it) },
             onAutoUpdateAppChange = { viewModel.setAutoUpdateApp(it) },
             onQuickDownloadOnShareChange = { viewModel.setQuickDownloadOnShare(it) },
+            onUpdateChannelChange = { viewModel.setUpdateChannel(it) },
             onCheckAppUpdateClick = { viewModel.checkForAppUpdates(manual = true) },
             onUpdateEngineClick = { viewModel.updateEngine() },
             onDismissRequest = {
@@ -454,18 +499,30 @@ fun MainScreen(
             AlertDialog(
                 onDismissRequest = { viewModel.dismissUpdateDialog() },
                 title = {
-                    Text(
-                        text = stringResource(R.string.update_dialog_title),
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = stringResource(R.string.update_dialog_title),
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (release.isAlpha) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            AlphaBadge()
+                        }
+                    }
                 },
                 text = {
                     Column {
-                        Text(
-                            text = stringResource(R.string.update_dialog_version, release.versionName),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = stringResource(R.string.update_dialog_version, release.versionName),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            if (release.isAlpha) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                AlphaBadge()
+                            }
+                        }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = stringResource(R.string.update_dialog_notes),

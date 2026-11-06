@@ -17,12 +17,14 @@ android {
         applicationId = "com.example.mediadownloader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 21
-        versionName = "3.1.2"
+        versionCode = 22
+        versionName = "3.2.0"
         ndk {
             abiFilters.clear()
             abiFilters.add("arm64-v8a")
         }
+        buildConfigField("boolean", "IS_ALPHA", "false")
+        buildConfigField("String", "BUILD_BRANCH", "\"main\"")
     }
 
     val localProps = Properties().apply {
@@ -112,7 +114,7 @@ android {
     buildFeatures {
       compose = true
       aidl = false
-      buildConfig = false
+      buildConfig = true
       shaders = false
     }
 

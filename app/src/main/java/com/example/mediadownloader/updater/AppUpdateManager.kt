@@ -13,6 +13,7 @@ import android.util.Log
 import com.example.mediadownloader.data.AppPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -24,7 +25,9 @@ data class ReleaseInfo(
     val versionName: String,
     val releaseNotes: String,
     val apkDownloadUrl: String?,
-    val htmlUrl: String
+    val htmlUrl: String,
+    val isAlpha: Boolean = false,
+    val targetBranch: String = "main"
 )
 
 sealed interface UpdateCheckResult {
@@ -37,7 +40,9 @@ class AppUpdateManager(private val context: Context) {
 
     companion object {
         private const val TAG = "AppUpdateManager"
-        private const val GITHUB_RELEASES_URL =
+        private const val GITHUB_ALL_RELEASES_URL =
+            "https://api.github.com/repos/DarkSkyee/snapload-android/releases?per_page=30"
+        private const val GITHUB_LATEST_RELEASE_URL =
             "https://api.github.com/repos/DarkSkyee/snapload-android/releases/latest"
         private const val CHECK_INTERVAL_MS = 2 * 60 * 1000L // 2 minutes cooldown
 
@@ -45,16 +50,40 @@ class AppUpdateManager(private val context: Context) {
             return tag.trim().removePrefix("v").removePrefix("V").trim()
         }
 
+        fun isAlphaRelease(release: JSONObject): Boolean {
+            val isPrerelease = release.optBoolean("prerelease", false)
+            val targetCommitish = release.optString("target_commitish", "")
+            val tagName = release.optString("tag_name", "")
+            val title = release.optString("name", "")
+
+            return isPrerelease ||
+                    targetCommitish.equals("alpha", ignoreCase = true) ||
+                    tagName.contains("alpha", ignoreCase = true) ||
+                    title.contains("alpha", ignoreCase = true)
+        }
+
         fun isNewerVersion(remote: String, current: String): Boolean {
             val cleanRemote = cleanVersionTag(remote)
             val cleanCurrent = cleanVersionTag(current)
-            if (cleanRemote == cleanCurrent) return false
+            if (cleanRemote.isEmpty()) return false
+            if (cleanRemote.equals(cleanCurrent, ignoreCase = true)) return false
 
-            val remoteParts = cleanRemote.split(".").map { part ->
+            val remotePre = if (cleanRemote.contains('-')) cleanRemote.substringAfter('-') else null
+            val currentPre = if (cleanCurrent.contains('-')) cleanCurrent.substringAfter('-') else null
+
+            val remoteBase = cleanRemote.substringBefore('-')
+            val currentBase = cleanCurrent.substringBefore('-')
+
+            val remoteParts = remoteBase.split(".").map { part ->
                 part.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
             }
-            val currentParts = cleanCurrent.split(".").map { part ->
+            val currentParts = currentBase.split(".").map { part ->
                 part.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+            }
+
+            // If base version strings aren't numbers at all (e.g. "invalid")
+            if (remoteParts.all { it == 0 } && currentParts.all { it == 0 } && remoteBase != "0") {
+                return false
             }
 
             val length = maxOf(remoteParts.size, currentParts.size)
@@ -64,6 +93,25 @@ class AppUpdateManager(private val context: Context) {
                 if (r > c) return true
                 if (r < c) return false
             }
+
+            // Base versions are numerically equal: e.g. 3.2.0 vs 3.2.0
+            // SemVer: 1.0.0-alpha < 1.0.0 (stable release is newer than pre-release)
+            if (remotePre == null && currentPre != null) {
+                return true
+            }
+            if (remotePre != null && currentPre == null) {
+                return false
+            }
+            if (remotePre != null && currentPre != null) {
+                // Both are pre-releases of the same base version: e.g. "alpha.2" vs "alpha.1"
+                val rNum = remotePre.filter { it.isDigit() }.toIntOrNull() ?: 0
+                val cNum = currentPre.filter { it.isDigit() }.toIntOrNull() ?: 0
+                if (rNum > cNum) return true
+                if (rNum < cNum) return false
+
+                return remotePre.compareTo(currentPre, ignoreCase = true) > 0
+            }
+
             return false
         }
 
@@ -192,12 +240,15 @@ class AppUpdateManager(private val context: Context) {
         return Result.success(archiveInfo)
     }
 
-    suspend fun checkForUpdates(force: Boolean = false): UpdateCheckResult = withContext(Dispatchers.IO) {
+    suspend fun checkForUpdates(
+        channel: UpdateChannel = preferences.updateChannel,
+        force: Boolean = false
+    ): UpdateCheckResult = withContext(Dispatchers.IO) {
         try {
             val currentVersion = getCurrentVersionName()
-            Log.d(TAG, "Checking for updates. Current version: $currentVersion")
+            Log.d(TAG, "Checking for updates. Channel: $channel, Current version: $currentVersion")
 
-            val url = URL(GITHUB_RELEASES_URL)
+            val url = URL(GITHUB_ALL_RELEASES_URL)
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 10000
@@ -207,20 +258,43 @@ class AppUpdateManager(private val context: Context) {
             }
 
             val responseCode = connection.responseCode
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                return@withContext UpdateCheckResult.Error("GitHub API response code: $responseCode")
+            val releasesJsonArray: JSONArray? = if (responseCode == HttpURLConnection.HTTP_OK) {
+                val responseBody = connection.inputStream.bufferedReader().use { it.readText() }
+                try {
+                    JSONArray(responseBody)
+                } catch (_: Exception) {
+                    null
+                }
+            } else {
+                null
             }
 
-            val responseBody = connection.inputStream.bufferedReader().use { it.readText() }
-            val json = JSONObject(responseBody)
+            // Find best candidate for the selected channel
+            val candidateRelease: JSONObject? = if (releasesJsonArray != null) {
+                findBestReleaseForChannel(releasesJsonArray, channel)
+            } else if (channel == UpdateChannel.STABLE) {
+                fetchLatestStableReleaseFallback(currentVersion)
+            } else {
+                null
+            }
 
-            val tagName = json.optString("tag_name", "").trim()
-            val releaseTitle = json.optString("name", tagName)
-            val releaseNotes = json.optString("body", "No release notes provided.")
-            val htmlUrl = json.optString("html_url", "https://github.com/DarkSkyee/snapload-android")
+            if (candidateRelease == null) {
+                if (responseCode != HttpURLConnection.HTTP_OK && releasesJsonArray == null) {
+                    return@withContext UpdateCheckResult.Error("GitHub API response code: $responseCode")
+                }
+                preferences.lastAppUpdateCheck = System.currentTimeMillis()
+                return@withContext UpdateCheckResult.UpToDate(currentVersion)
+            }
+
+            val tagName = candidateRelease.optString("tag_name", "").trim()
+            val releaseTitle = candidateRelease.optString("name", tagName)
+            val releaseNotes = candidateRelease.optString("body", "No release notes provided.")
+            val htmlUrl = candidateRelease.optString("html_url", "https://github.com/DarkSkyee/snapload-android")
+            val isAlpha = isAlphaRelease(candidateRelease)
+            val targetBranch = candidateRelease.optString("target_commitish", if (isAlpha) "alpha" else "main")
 
             var apkUrl: String? = null
-            val assets = json.optJSONArray("assets")
+            val assets = candidateRelease.optJSONArray("assets")
             if (assets != null) {
                 for (i in 0 until assets.length()) {
                     val asset = assets.getJSONObject(i)
@@ -240,7 +314,9 @@ class AppUpdateManager(private val context: Context) {
                     versionName = releaseTitle.ifBlank { tagName },
                     releaseNotes = releaseNotes,
                     apkDownloadUrl = apkUrl,
-                    htmlUrl = htmlUrl
+                    htmlUrl = htmlUrl,
+                    isAlpha = isAlpha,
+                    targetBranch = targetBranch
                 )
                 UpdateCheckResult.UpdateAvailable(releaseInfo)
             } else {
@@ -253,6 +329,61 @@ class AppUpdateManager(private val context: Context) {
         }
     }
 
+    private fun findBestReleaseForChannel(releases: JSONArray, channel: UpdateChannel): JSONObject? {
+        val nonDraftReleases = mutableListOf<JSONObject>()
+        for (i in 0 until releases.length()) {
+            val rel = releases.optJSONObject(i) ?: continue
+            if (!rel.optBoolean("draft", false)) {
+                nonDraftReleases.add(rel)
+            }
+        }
+
+        return when (channel) {
+            UpdateChannel.STABLE -> {
+                nonDraftReleases.firstOrNull { !isAlphaRelease(it) }
+            }
+            UpdateChannel.ALPHA -> {
+                val latestAlpha = nonDraftReleases.firstOrNull { isAlphaRelease(it) }
+                val latestStable = nonDraftReleases.firstOrNull { !isAlphaRelease(it) }
+
+                if (latestAlpha == null) {
+                    latestStable
+                } else if (latestStable == null) {
+                    latestAlpha
+                } else {
+                    val alphaTag = latestAlpha.optString("tag_name", "")
+                    val stableTag = latestStable.optString("tag_name", "")
+                    if (isNewerVersion(stableTag, alphaTag)) {
+                        latestStable
+                    } else {
+                        latestAlpha
+                    }
+                }
+            }
+        }
+    }
+
+    private fun fetchLatestStableReleaseFallback(currentVersion: String): JSONObject? {
+        return try {
+            val url = URL(GITHUB_LATEST_RELEASE_URL)
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 10000
+                readTimeout = 10000
+                setRequestProperty("User-Agent", "SnapLoad-Android/${currentVersion}")
+                setRequestProperty("Accept", "application/vnd.github.v3+json")
+            }
+            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                val body = connection.inputStream.bufferedReader().use { it.readText() }
+                JSONObject(body)
+            } else {
+                null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     suspend fun checkAutoUpdateOnLaunch(): UpdateCheckResult? {
         if (!preferences.autoUpdateApp) return null
 
@@ -260,7 +391,7 @@ class AppUpdateManager(private val context: Context) {
         val timeSinceLastCheck = now - preferences.lastAppUpdateCheck
 
         if (preferences.lastAppUpdateCheck == 0L || timeSinceLastCheck > CHECK_INTERVAL_MS) {
-            return checkForUpdates(force = false)
+            return checkForUpdates(channel = preferences.updateChannel, force = false)
         }
         return null
     }
@@ -513,5 +644,10 @@ class AppUpdateManager(private val context: Context) {
             Log.e(TAG, "Failed to launch PackageInstaller session: ${e.message}", e)
             Result.failure(e)
         }
+    }
+
+    fun isAlphaBuild(): Boolean {
+        val versionName = getCurrentVersionName()
+        return com.example.mediadownloader.BuildConfig.IS_ALPHA || versionName.contains("alpha", ignoreCase = true)
     }
 }

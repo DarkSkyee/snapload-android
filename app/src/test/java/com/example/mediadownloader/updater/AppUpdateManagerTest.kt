@@ -74,4 +74,80 @@ class AppUpdateManagerTest {
         assertFalse(AppUpdateManager.isNewerVersion("invalid", "3.1.2"))
         assertFalse(AppUpdateManager.isNewerVersion("", ""))
     }
+
+    @Test
+    fun isNewerVersion_handlesAlphaAndPrereleaseTransitions() {
+        // Stable release is newer than pre-release of the same version (SemVer 1.0.0-alpha < 1.0.0)
+        assertTrue(AppUpdateManager.isNewerVersion("3.2.0", "3.2.0-alpha"))
+        assertTrue(AppUpdateManager.isNewerVersion("v3.2.0", "v3.2.0-alpha.1"))
+
+        // Pre-release is NOT newer than stable release of the same version
+        assertFalse(AppUpdateManager.isNewerVersion("3.2.0-alpha", "3.2.0"))
+        assertFalse(AppUpdateManager.isNewerVersion("v3.2.0-alpha.1", "v3.2.0"))
+
+        // Higher version alpha is newer than older stable
+        assertTrue(AppUpdateManager.isNewerVersion("3.2.0-alpha", "3.1.2"))
+        assertTrue(AppUpdateManager.isNewerVersion("v3.2.0-alpha.1", "3.1.2"))
+
+        // Newer alpha over older alpha of the same base
+        assertTrue(AppUpdateManager.isNewerVersion("3.2.0-alpha.2", "3.2.0-alpha.1"))
+        assertTrue(AppUpdateManager.isNewerVersion("v3.2.0-alpha2", "v3.2.0-alpha1"))
+        assertFalse(AppUpdateManager.isNewerVersion("3.2.0-alpha.1", "3.2.0-alpha.2"))
+
+        // Higher base version alpha over lower base version alpha
+        assertTrue(AppUpdateManager.isNewerVersion("3.3.0-alpha", "3.2.0-alpha"))
+        assertFalse(AppUpdateManager.isNewerVersion("3.2.0-alpha", "3.3.0-alpha"))
+
+        // Equal alphas
+        assertFalse(AppUpdateManager.isNewerVersion("3.2.0-alpha", "3.2.0-alpha"))
+        assertFalse(AppUpdateManager.isNewerVersion("v3.2.0-alpha.1", "3.2.0-alpha.1"))
+    }
+
+    @Test
+    fun updateChannel_fromKey_parsesCorrectly() {
+        assertEquals(UpdateChannel.ALPHA, UpdateChannel.fromKey("alpha"))
+        assertEquals(UpdateChannel.ALPHA, UpdateChannel.fromKey("ALPHA"))
+        assertEquals(UpdateChannel.ALPHA, UpdateChannel.fromKey("  Alpha  "))
+        assertEquals(UpdateChannel.STABLE, UpdateChannel.fromKey("stable"))
+        assertEquals(UpdateChannel.STABLE, UpdateChannel.fromKey("main"))
+        assertEquals(UpdateChannel.STABLE, UpdateChannel.fromKey(null))
+        assertEquals(UpdateChannel.STABLE, UpdateChannel.fromKey(""))
+    }
+
+    @Test
+    fun isAlphaRelease_detectsAlphaReleases() {
+        val alphaJson1 = org.json.JSONObject().apply {
+            put("prerelease", true)
+            put("tag_name", "v3.2.0")
+        }
+        assertTrue(AppUpdateManager.isAlphaRelease(alphaJson1))
+
+        val alphaJson2 = org.json.JSONObject().apply {
+            put("prerelease", false)
+            put("target_commitish", "alpha")
+            put("tag_name", "v3.2.0")
+        }
+        assertTrue(AppUpdateManager.isAlphaRelease(alphaJson2))
+
+        val alphaJson3 = org.json.JSONObject().apply {
+            put("prerelease", false)
+            put("tag_name", "v3.2.0-alpha")
+        }
+        assertTrue(AppUpdateManager.isAlphaRelease(alphaJson3))
+
+        val alphaJson4 = org.json.JSONObject().apply {
+            put("prerelease", false)
+            put("tag_name", "v3.2.0")
+            put("name", "SnapLoad v3.2.0 Alpha Preview")
+        }
+        assertTrue(AppUpdateManager.isAlphaRelease(alphaJson4))
+
+        val stableJson = org.json.JSONObject().apply {
+            put("prerelease", false)
+            put("target_commitish", "main")
+            put("tag_name", "v3.2.0")
+            put("name", "SnapLoad v3.2.0")
+        }
+        assertFalse(AppUpdateManager.isAlphaRelease(stableJson))
+    }
 }

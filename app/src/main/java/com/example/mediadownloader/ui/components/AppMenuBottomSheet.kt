@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Download
@@ -26,6 +27,8 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Warning
+import com.example.mediadownloader.updater.UpdateChannel
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -62,6 +65,8 @@ fun AppMenuBottomSheet(
     autoUpdateEngine: Boolean,
     autoUpdateApp: Boolean,
     quickDownloadOnShare: Boolean,
+    updateChannel: UpdateChannel = UpdateChannel.STABLE,
+    isAlphaBuild: Boolean = false,
     engineVersion: String,
     appVersion: String,
     isUpdatingEngine: Boolean,
@@ -70,6 +75,7 @@ fun AppMenuBottomSheet(
     onAutoUpdateEngineChange: (Boolean) -> Unit,
     onAutoUpdateAppChange: (Boolean) -> Unit,
     onQuickDownloadOnShareChange: (Boolean) -> Unit,
+    onUpdateChannelChange: (UpdateChannel) -> Unit = {},
     onCheckAppUpdateClick: () -> Unit,
     onUpdateEngineClick: () -> Unit,
     onDismissRequest: () -> Unit
@@ -117,6 +123,10 @@ fun AppMenuBottomSheet(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
+                        if (isAlphaBuild) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            AlphaBadge()
+                        }
                     }
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -169,6 +179,34 @@ fun AppMenuBottomSheet(
                         checked = autoUpdateApp,
                         onCheckedChange = onAutoUpdateAppChange
                     )
+
+                    // Update Channel Selector
+                    Spacer(modifier = Modifier.height(4.dp))
+                    SettingsSectionHeader(
+                        icon = Icons.AutoMirrored.Filled.AltRoute,
+                        title = stringResource(R.string.settings_update_channel_title)
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        ChannelSelectionPill(
+                            title = stringResource(R.string.channel_stable_title),
+                            subtitle = stringResource(R.string.channel_stable_desc),
+                            isSelected = updateChannel == UpdateChannel.STABLE,
+                            onClick = { onUpdateChannelChange(UpdateChannel.STABLE) },
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        ChannelSelectionPill(
+                            title = stringResource(R.string.channel_alpha_title),
+                            subtitle = stringResource(R.string.channel_alpha_desc),
+                            isSelected = updateChannel == UpdateChannel.ALPHA,
+                            onClick = { onUpdateChannelChange(UpdateChannel.ALPHA) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
@@ -256,10 +294,46 @@ fun AppMenuBottomSheet(
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
-                                    text = stringResource(R.string.settings_engine_version_label, engineVersion),
+                                    text = stringResource(
+                                        R.string.settings_app_channel_label,
+                                        if (updateChannel == UpdateChannel.ALPHA) "Alpha" else "Stable"
+                                    ),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = if (updateChannel == UpdateChannel.ALPHA) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
                                 )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = stringResource(R.string.settings_engine_version_label, engineVersion),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (isAlphaBuild) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Warning,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = stringResource(R.string.settings_alpha_warning),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                    }
+                                }
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Row(
@@ -389,6 +463,65 @@ private fun SettingsSwitchRow(
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange
+        )
+    }
+}
+
+@Composable
+private fun ChannelSelectionPill(
+    title: String,
+    subtitle: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val bg = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+    val border = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = bg,
+        border = androidx.compose.foundation.BorderStroke(if (isSelected) 2.dp else 1.dp, border),
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onClick() }
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 10.dp, horizontal = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = title,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp
+            )
+        }
+    }
+}
+
+@Composable
+fun AlphaBadge(modifier: Modifier = Modifier) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f)),
+        modifier = modifier
+    ) {
+        Text(
+            text = stringResource(R.string.alpha_badge_text),
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Black,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
         )
     }
 }

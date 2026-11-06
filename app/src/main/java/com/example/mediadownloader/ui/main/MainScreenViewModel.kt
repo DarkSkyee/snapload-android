@@ -22,6 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.example.mediadownloader.updater.UpdateChannel
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -46,6 +47,8 @@ data class MainUiState(
     val autoUpdateEngine: Boolean = true,
     val autoUpdateApp: Boolean = true,
     val quickDownloadOnShare: Boolean = false,
+    val updateChannel: UpdateChannel = UpdateChannel.STABLE,
+    val isAlphaBuild: Boolean = false,
     val recentDownloads: List<DownloadedItem> = emptyList()
 )
 
@@ -64,7 +67,9 @@ class MainScreenViewModel(
             currentLanguage = preferences?.selectedLanguage ?: "en",
             autoUpdateEngine = preferences?.autoUpdateEngine ?: true,
             autoUpdateApp = preferences?.autoUpdateApp ?: true,
-            quickDownloadOnShare = preferences?.quickDownloadOnShare ?: false
+            quickDownloadOnShare = preferences?.quickDownloadOnShare ?: false,
+            updateChannel = preferences?.updateChannel ?: UpdateChannel.STABLE,
+            isAlphaBuild = updateManager?.isAlphaBuild() ?: com.example.mediadownloader.BuildConfig.IS_ALPHA
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -112,6 +117,13 @@ class MainScreenViewModel(
                     }
                     else -> {}
                 }
+            }
+        }
+
+        // Observe updateChannel changes
+        viewModelScope.launch {
+            preferences?.updateChannelFlow?.collect { channel ->
+                _uiState.update { it.copy(updateChannel = channel) }
             }
         }
 
@@ -231,6 +243,12 @@ class MainScreenViewModel(
         _uiState.update { it.copy(quickDownloadOnShare = enabled) }
     }
 
+    fun setUpdateChannel(channel: UpdateChannel) {
+        preferences?.updateChannel = channel
+        _uiState.update { it.copy(updateChannel = channel) }
+        checkForAppUpdates(manual = true)
+    }
+
     fun updateEngine() {
         if (_uiState.value.isUpdatingEngine) return
 
@@ -256,8 +274,13 @@ class MainScreenViewModel(
         if (_uiState.value.isCheckingAppUpdate) return
 
         _uiState.update { it.copy(isCheckingAppUpdate = true, appUpdateMessage = null) }
+        val channel = preferences?.updateChannel ?: _uiState.value.updateChannel
         viewModelScope.launch {
-            val result = if (manual) mgr.checkForUpdates(force = true) else (mgr.checkAutoUpdateOnLaunch() ?: mgr.checkForUpdates(force = false))
+            val result = if (manual) {
+                mgr.checkForUpdates(channel = channel, force = true)
+            } else {
+                mgr.checkAutoUpdateOnLaunch() ?: mgr.checkForUpdates(channel = channel, force = false)
+            }
             _uiState.update { current ->
                 when (result) {
                     is UpdateCheckResult.UpdateAvailable -> {
