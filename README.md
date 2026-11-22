@@ -35,6 +35,9 @@
   <a href="https://github.com/DarkSkyee/snapload-android/releases/latest">
     <img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F%20Download-Latest%20Release%20APK-6366F1?style=for-the-badge&logo=android&logoColor=white" height="42" alt="Download Latest Release APK" />
   </a>
+  <a href="https://github.com/DarkSkyee/snapload-windows">
+    <img src="https://img.shields.io/badge/%F0%9F%92%BB%20Also%20Available-SnapLoad%20for%20Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white" height="42" alt="SnapLoad for Windows" />
+  </a>
 </p>
 
 > [!IMPORTANT]
@@ -117,6 +120,17 @@ cd snapload-android
 # The resulting APK will be located at:
 # app/build/outputs/apk/release/app-release.apk
 ```
+
+---
+
+## 🌐 SnapLoad Ecosystem
+
+Looking for SnapLoad on other devices? Check out the desktop counterpart:
+
+| Platform | Project | Features | Tech Stack |
+| :--- | :--- | :--- | :--- |
+| 🤖 **Android** | **SnapLoad Android** *(Current)* | On-device offline conversion, share sheet integration, Material 3 Expressive UI | Kotlin, Jetpack Compose, Python, yt-dlp, FFmpeg |
+| 💻 **Windows** | [**SnapLoad Windows**](https://github.com/DarkSkyee/snapload-windows) | Instant in-browser downloads, YouTube / Spotify / SoundCloud buttons, zero Electron | Rust, Tauri 2, Chromium & Firefox Extension |
 
 ---
 
